@@ -1,60 +1,83 @@
 #!/usr/bin/env python3
-"""Calibración — CORRER EN TU MÁQUINA (con acceso a internet), una sola vez.
-
-Descarga el sitemap y unas páginas de detalle reales, las guarda como fixtures
-en tests/fixtures/ y reporta qué estrategias de parseo funcionan. Si el parser
-de detalle necesita ajustes, abre la carpeta con Claude Code y pídele que afine
-scraper/detail_parser.py contra los fixtures descargados.
-
-Uso:  python calibrate.py
-"""
+"""Calibración con diagnóstico: si el sitemap no llega como XML válido, muestra
+QUÉ respondió el sitio para saber si nos bloquea o nos redirige."""
 from pathlib import Path
 
 import yaml
 
-from scraper.detail_parser import parsear_detalle
 from scraper.caption_parser import parsear_entrada
+from scraper.detail_parser import parsear_detalle
 from scraper.http_polite import ClienteEducado
-from scraper.sitemap import descargar_sitemap
+from scraper.sitemap import URL_SITEMAP, parsear_sitemap
 
 FIXTURES = Path(__file__).parent / "tests" / "fixtures"
 
 
 def main() -> None:
     cfg = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
-    cliente = ClienteEducado(contacto=cfg.get("contacto", "calibracion@ejemplo.com"))
+    cliente = ClienteEducado(contacto=cfg.get("contacto", "calibracion"))
     cliente.cargar_robots()
     print("robots.txt cargado; el cliente respetará sus reglas.\n")
 
-    entradas = descargar_sitemap(cliente)
+    print(f"Descargando sitemap: {URL_SITEMAP}")
+    try:
+        r = cliente.get(URL_SITEMAP)
+    except Exception as exc:
+        print(f"ERROR al pedir el sitemap: {exc}")
+        raise SystemExit(1)
+
+    cuerpo = r.text or ""
+    inicio = cuerpo.lstrip()[:400]
+    parece_html = inicio[:200].lower().lstrip().startswith(("<!doctype", "<html"))
+
+    print("\n================ DIAGNOSTICO DE LA RESPUESTA ================")
+    print(f"  Codigo HTTP        : {r.status_code}")
+    print(f"  URL final          : {r.url}")
+    print(f"  Content-Type       : {r.headers.get('Content-Type', '(no informado)')}")
+    print(f"  Content-Encoding   : {r.headers.get('Content-Encoding', '(ninguno)')}")
+    print(f"  Tamano (caracteres): {len(cuerpo)}")
+    print(f"  Parece HTML?       : {'SI' if parece_html else 'no'}")
+    print("  ---- primeros 400 caracteres ----")
+    print(inicio if inicio else "(respuesta vacia)")
+    print("============================================================\n")
+
+    try:
+        entradas = parsear_sitemap(cuerpo)
+    except Exception as exc:
+        print("No se pudo interpretar la respuesta como XML del sitemap.")
+        print("El bloque DIAGNOSTICO de arriba dice que respondio el sitio.")
+        print(f"Detalle tecnico: {exc}")
+        raise SystemExit(1)
+
     con_caption = [e for e in entradas if e.tiene_caption]
     sin_caption = [e for e in entradas if not e.tiene_caption]
-    print(f"Sitemap: {len(entradas)} avisos "
+    print(f"Sitemap OK! {len(entradas)} avisos "
           f"({len(con_caption)} con caption, {len(sin_caption)} sin caption)")
-    print("Compara ese total con el contador 'Bienes Raíces N' del sitio web.\n")
+    print("Compara ese total con el contador 'Bienes Raices N' del sitio web.\n")
 
     FIXTURES.mkdir(parents=True, exist_ok=True)
-
     if con_caption:
         e = con_caption[0]
         print(f"Ejemplo de caption parseado (aviso {e.id_aviso}):")
-        print(f"  título : {e.titulo}")
+        print(f"  titulo : {e.titulo}")
         print(f"  campos : {parsear_entrada(e.titulo, e.caption)}\n")
 
     muestras = (sin_caption[:2] + con_caption[:1]) or entradas[:3]
     for e in muestras:
-        r = cliente.get(e.url)
+        try:
+            rd = cliente.get(e.url)
+        except Exception as exc:
+            print(f"Detalle {e.id_aviso}: no se pudo descargar ({exc})")
+            continue
         ruta = FIXTURES / f"detalle_{e.id_aviso}.html"
-        ruta.write_text(r.text, encoding="utf-8")
-        campos = parsear_detalle(r.text)
-        print(f"Detalle {e.id_aviso} -> guardado en {ruta.name}")
+        ruta.write_text(rd.text, encoding="utf-8")
+        campos = parsear_detalle(rd.text)
         ok = [k for k in ("tipo_transaccion", "tipo_inmueble", "precio", "zona",
                           "descripcion") if k in campos]
-        print(f"  extraído: {sorted(campos.keys()) or 'NADA'}")
-        print(f"  campos clave presentes: {ok or 'NINGUNO — afinar detail_parser.py'}\n")
+        print(f"Detalle {e.id_aviso} -> {ruta.name} | campos clave: "
+              f"{ok or 'NINGUNO - afinar detail_parser.py'}")
 
-    print("Listo. Los fixtures quedaron en tests/fixtures/ — consérvalos en git:")
-    print("son la red de seguridad contra rediseños del sitio.")
+    print("\nListo.")
 
 
 if __name__ == "__main__":
