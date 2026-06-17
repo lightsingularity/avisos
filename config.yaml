@@ -1,7 +1,7 @@
 # ----- Configuración del scraper -----
 
 # Correo que viaja en el User-Agent para que el sitio pueda contactarte.
-contacto: "tu-correo@ejemplo.com"
+contacto: "contacto"
 
 # Segundos mínimos entre solicitudes (cortesía). No bajar de 1.0.
 seg_entre_solicitudes: 1.0
