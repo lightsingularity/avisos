@@ -1,11 +1,4 @@
-"""Cliente HTTP "educado": respeta robots.txt, limita la velocidad y se identifica.
-
-Reglas:
-- Nunca más de una solicitud cada `seg_entre_solicitudes` segundos.
-- User-Agent honesto con correo de contacto del operador.
-- Verifica robots.txt en cada corrida antes de tocar cualquier URL.
-- Reintentos con espera exponencial ante errores 5xx o de red.
-"""
+"""Cliente HTTP "educado": respeta robots.txt, limita la velocidad y se identifica."""
 from __future__ import annotations
 
 import time
@@ -33,20 +26,16 @@ class ClienteEducado:
         self._robots = urllib.robotparser.RobotFileParser()
         self._robots_cargado = False
 
-    # ---------------- robots.txt ----------------
     def cargar_robots(self) -> None:
-        """Lee robots.txt del sitio. Si no se puede leer, asumimos lo más restrictivo razonable."""
         url = f"{BASE}/robots.txt"
         try:
             r = self.sesion.get(url, timeout=self.timeout)
             if r.status_code == 200:
                 self._robots.parse(r.text.splitlines())
             else:
-                # Sin robots.txt accesible: el estándar permite rastrear, pero registramos.
                 self._robots.parse([])
             self._robots_cargado = True
         except requests.RequestException:
-            # Si ni robots.txt responde, mejor no rastrear nada hoy.
             raise RuntimeError("No se pudo leer robots.txt; se aborta la corrida por precaución.")
 
     def permitido(self, url: str) -> bool:
@@ -54,7 +43,6 @@ class ClienteEducado:
             self.cargar_robots()
         return self._robots.can_fetch(self.sesion.headers["User-Agent"], url)
 
-    # ---------------- GET con cortesía ----------------
     def get(self, url: str) -> requests.Response:
         if urlparse(url).netloc.endswith("avisosdeocasion.com") and not self.permitido(url):
             raise PermissionError(f"robots.txt no permite: {url}")
@@ -68,8 +56,14 @@ class ClienteEducado:
                 r = self.sesion.get(url, timeout=self.timeout)
                 if r.status_code >= 500:
                     raise requests.HTTPError(f"HTTP {r.status_code}")
+                # El sitio sirve XML/HTML en UTF-8 pero SIN declarar charset, y
+                # entonces requests asume Latin-1 (acentos rotos y BOM "ï»¿").
+                # Forzamos UTF-8 cuando no viene charset en el Content-Type.
+                ctype = r.headers.get("Content-Type", "").lower()
+                if "charset=" not in ctype and any(t in ctype for t in ("xml", "html", "text")):
+                    r.encoding = "utf-8"
                 return r
             except (requests.RequestException, requests.HTTPError) as e:
                 ultimo_error = e
-                time.sleep(2 ** intento)  # 2s, 4s, 8s
+                time.sleep(2 ** intento)
         raise RuntimeError(f"Fallaron {self.max_reintentos} intentos para {url}: {ultimo_error}")
