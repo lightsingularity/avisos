@@ -1,0 +1,171 @@
+"""Base SQLite derivada de la bitácora de eventos.
+
+La base NUNCA se versiona en git: se reconstruye con `python build_db.py`
+(tarda segundos incluso con años de datos). Campos en español, precios en MXN.
+"""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+from .events import leer_eventos
+
+RUTA_DB = Path(__file__).resolve().parent.parent / "data" / "avisos.db"
+
+_ESQUEMA = """
+CREATE TABLE avisos (
+    id_aviso            TEXT PRIMARY KEY,
+    url                 TEXT,
+    tipo_transaccion    TEXT,
+    tipo_inmueble       TEXT,
+    zona                TEXT,
+    colonia             TEXT,
+    plantas             REAL,
+    recamaras           REAL,
+    banos               REAL,
+    m2_construccion     REAL,
+    m2_terreno          REAL,
+    hectareas           REAL,
+    metros_frente       REAL,
+    m2_oficina          REAL,
+    m2_bodega           REAL,
+    mas_iva             INTEGER,
+    descripcion         TEXT,
+    fecha_primera_vista TEXT NOT NULL,
+    fecha_ultima_vista  TEXT NOT NULL,
+    fecha_baja          TEXT
+);
+CREATE TABLE historial_precios (
+    id_aviso TEXT NOT NULL,
+    fecha    TEXT NOT NULL,
+    precio   INTEGER NOT NULL,
+    unidad   TEXT NOT NULL DEFAULT 'total',
+    PRIMARY KEY (id_aviso, fecha)
+);
+CREATE TABLE fotos (
+    id_aviso   TEXT NOT NULL,
+    url_foto   TEXT NOT NULL,
+    orden      INTEGER,
+    ruta_local TEXT,
+    PRIMARY KEY (id_aviso, url_foto)
+);
+CREATE TABLE corridas (
+    fecha        TEXT PRIMARY KEY,
+    vistos       INTEGER,
+    altas        INTEGER,
+    bajas        INTEGER,
+    cambios      INTEGER,
+    errores      INTEGER,
+    duracion_seg INTEGER
+);
+CREATE INDEX idx_avisos_zona ON avisos(zona, tipo_inmueble, tipo_transaccion);
+CREATE INDEX idx_hist_aviso ON historial_precios(id_aviso, fecha);
+
+-- Vista principal para análisis: último precio + métricas derivadas.
+CREATE VIEW analisis AS
+SELECT a.*,
+       h.precio          AS precio_actual,
+       h.unidad          AS precio_unidad,
+       CAST(julianday(COALESCE(a.fecha_baja, date('now')))
+            - julianday(a.fecha_primera_vista) AS INTEGER) AS dias_en_mercado,
+       CASE WHEN h.unidad = 'total' AND a.m2_construccion > 0
+            THEN ROUND(h.precio / a.m2_construccion, 0) END AS precio_m2_construccion,
+       CASE WHEN h.unidad = 'total' AND a.m2_terreno > 0
+            THEN ROUND(h.precio / a.m2_terreno, 0)
+            WHEN h.unidad = 'm2' THEN h.precio END           AS precio_m2_terreno,
+       (SELECT COUNT(*) - 1 FROM historial_precios h2
+         WHERE h2.id_aviso = a.id_aviso)                     AS num_cambios_precio
+FROM avisos a
+JOIN historial_precios h
+  ON h.id_aviso = a.id_aviso
+ AND h.fecha = (SELECT MAX(fecha) FROM historial_precios h3
+                 WHERE h3.id_aviso = a.id_aviso);
+"""
+
+_CAMPOS_AVISO = [
+    "url", "tipo_transaccion", "tipo_inmueble", "zona", "colonia", "plantas",
+    "recamaras", "banos", "m2_construccion", "m2_terreno", "hectareas",
+    "metros_frente", "m2_oficina", "m2_bodega", "mas_iva", "descripcion",
+]
+
+
+def reconstruir(ruta_db: Path = RUTA_DB, dir_eventos=None) -> sqlite3.Connection:
+    """Reconstruye la base completa reproduciendo la bitácora de eventos."""
+    ruta_db.parent.mkdir(parents=True, exist_ok=True)
+    if ruta_db.exists():
+        ruta_db.unlink()
+    con = sqlite3.connect(ruta_db)
+    con.executescript(_ESQUEMA)
+    kw = {"dir_eventos": dir_eventos} if dir_eventos else {}
+    for ev in leer_eventos(**kw):
+        _aplicar(con, ev)
+    con.commit()
+    return con
+
+
+def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
+    e, f = ev["e"], ev["f"]
+    if e == "alta":
+        d = ev.get("datos", {})
+        con.execute(
+            f"""INSERT OR REPLACE INTO avisos
+                (id_aviso, {', '.join(_CAMPOS_AVISO)},
+                 fecha_primera_vista, fecha_ultima_vista, fecha_baja)
+                VALUES (?{', ?' * len(_CAMPOS_AVISO)}, ?, ?, NULL)""",
+            [ev["id"]] + [d.get(c) for c in _CAMPOS_AVISO] + [f, f],
+        )
+        if "precio" in d:
+            con.execute(
+                "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
+                (ev["id"], f, d["precio"], d.get("precio_unidad", "total")),
+            )
+        for i, u in enumerate(ev.get("fotos", []), start=1):
+            con.execute(
+                "INSERT OR IGNORE INTO fotos (id_aviso, url_foto, orden) VALUES (?,?,?)",
+                (ev["id"], u, i),
+            )
+    elif e == "precio":
+        con.execute(
+            "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
+            (ev["id"], f, ev["precio"], ev.get("unidad", "total")),
+        )
+        con.execute("UPDATE avisos SET fecha_ultima_vista=? WHERE id_aviso=?", (f, ev["id"]))
+    elif e == "baja":
+        con.execute("UPDATE avisos SET fecha_baja=? WHERE id_aviso=?", (f, ev["id"]))
+    elif e == "realta":
+        con.execute(
+            "UPDATE avisos SET fecha_baja=NULL, fecha_ultima_vista=? WHERE id_aviso=?",
+            (f, ev["id"]),
+        )
+    elif e == "visto":
+        con.execute("UPDATE avisos SET fecha_ultima_vista=? WHERE id_aviso=?", (f, ev["id"]))
+    elif e == "corrida":
+        con.execute(
+            "INSERT OR REPLACE INTO corridas VALUES (?,?,?,?,?,?,?)",
+            (f, ev.get("vistos"), ev.get("altas"), ev.get("bajas"),
+             ev.get("cambios"), ev.get("errores"), ev.get("duracion_seg")),
+        )
+
+
+def estado_actual(dir_eventos=None) -> dict[str, dict]:
+    """Estado en memoria {id_aviso: {activo, precio, unidad}} para la corrida diaria."""
+    estado: dict[str, dict] = {}
+    kw = {"dir_eventos": dir_eventos} if dir_eventos else {}
+    for ev in leer_eventos(**kw):
+        e = ev["e"]
+        if e == "alta":
+            d = ev.get("datos", {})
+            estado[ev["id"]] = {
+                "activo": True,
+                "precio": d.get("precio"),
+                "unidad": d.get("precio_unidad", "total"),
+                "tiene_datos": bool(d.get("tipo_inmueble") or d.get("precio")),
+            }
+        elif e == "precio" and ev["id"] in estado:
+            estado[ev["id"]]["precio"] = ev["precio"]
+            estado[ev["id"]]["unidad"] = ev.get("unidad", "total")
+        elif e == "baja" and ev["id"] in estado:
+            estado[ev["id"]]["activo"] = False
+        elif e == "realta" and ev["id"] in estado:
+            estado[ev["id"]]["activo"] = True
+    return estado

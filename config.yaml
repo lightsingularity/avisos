@@ -1,0 +1,18 @@
+# ----- Configuración del scraper -----
+
+# Correo que viaja en el User-Agent para que el sitio pueda contactarte.
+contacto: "tu-correo@ejemplo.com"
+
+# Segundos mínimos entre solicitudes (cortesía). No bajar de 1.0.
+seg_entre_solicitudes: 1.0
+
+# Cuándo visitar la página de detalle de un aviso nuevo:
+#   nunca     -> solo sitemap (cero solicitudes extra)
+#   faltantes -> solo avisos sin caption en el sitemap (recomendado)
+#   todos     -> todos los avisos nuevos (descripciones completas)
+detalle: faltantes
+
+# Descarga de imágenes (ver download_photos.py). Mantener en false salvo que
+# cuentes con autorización por escrito del sitio o asumas conscientemente el
+# riesgo: las fotos son obras protegidas según el Aviso Legal del sitio.
+descargar_fotos: false
