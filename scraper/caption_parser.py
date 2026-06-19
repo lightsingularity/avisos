@@ -87,30 +87,34 @@ def parsear_caption(caption: str | None) -> dict[str, Any]:
         out["mas_iva"] = bool(_RX_MAS_IVA.search(caption))
         posiciones.append(m.start())
 
-    # ---- ubicación: el texto ANTES del primer campo detectado ----
-    # Si no se detectó ningún campo, NO adivinamos ubicación (antes se colaba
-    # todo el texto del anuncio). Y validamos que parezca una zona/colonia real.
-    corte = min(posiciones) if posiciones else 0
-    ubic = caption[:corte].strip(" .-\u00b7") if corte else ""
-    if _ubicacion_plausible(ubic):
-        if " - " in ubic:
-            zona, colonia = ubic.split(" - ", 1)
-            out["zona"], out["colonia"] = zona.strip(), colonia.strip(" .")
-        else:
-            out["zona"] = ubic
+    # ---- ubicación: "ZONA - COLONIA" antes de los atributos ----
+    # El formato del sitio SIEMPRE separa zona y colonia con " - ". Si no hay
+    # " - ", el texto es libre (descripción) y NO extraemos zona: así evitamos
+    # que el texto del anuncio se cuele como si fuera una zona.
+    corte = min(posiciones) if posiciones else len(caption)
+    prefijo = caption[:corte]
+    if " - " in prefijo:
+        zona, colonia = prefijo.split(" - ", 1)
+        zona = zona.strip(" .-\u00b7")
+        colonia = colonia.strip(" .-\u00b7")
+        # Si no había atributos, la colonia puede arrastrar un teléfono al final.
+        colonia = re.sub(r"\s*\+?\d[\d\s().\-]{6,}$", "", colonia).strip(" .")
+        if _zona_plausible(zona):
+            out["zona"] = zona
+            if colonia:
+                out["colonia"] = colonia
     return out
 
 
-def _ubicacion_plausible(texto: str) -> bool:
-    """Las zonas/colonias son cortas y en MAYÚSCULAS (CUMBRES, VALLE ORIENTE).
-    El texto de un anuncio es largo y/o en minúsculas, así que lo rechazamos."""
-    if not texto or len(texto) > 80:
+def _zona_plausible(texto: str) -> bool:
+    """La zona es corta y mayormente en MAYÚSCULAS (CUMBRES, SAN NICOLAS DE
+    LOS GARZA, CARRETERA NACIONAL). El texto de un anuncio no lo es."""
+    if not texto or len(texto) > 40:
         return False
     letras = [c for c in texto if c.isalpha()]
     if not letras:
         return False
-    proporcion_mayus = sum(1 for c in letras if c.isupper()) / len(letras)
-    return proporcion_mayus >= 0.6
+    return sum(1 for c in letras if c.isupper()) / len(letras) >= 0.6
 
 
 def parsear_entrada(titulo: str | None, caption: str | None) -> dict[str, Any]:
