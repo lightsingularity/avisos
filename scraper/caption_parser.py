@@ -1,19 +1,4 @@
-"""Parseo de <image:title> y <image:caption> del sitemap a campos estructurados.
-
-Ejemplos reales que este módulo debe entender:
-
-  título:  "Se vende departamento en CUMBRES MADEIRA"
-  caption: "CUMBRES - CUMBRES MADEIRA 3 Recámaras 3baños 1Planta 89 Metros
-            Cuadrados de Construcción $5,200,000 DEPARTAMENTOS CON ALTA PLUSVALIA..."
-
-  caption: "CENTRO - GARZA NIETO 900 Metros Cuadrados totales de terreno 900 Metros
-            Cuadrados de bodega 30 Metros Cuadrados de Oficina $64,900 más IVA, ..."
-
-  caption: "CARRETERA NACIONAL - LAS VISITAS DEL VERGEL 1000 Metros Cuadrados Totales
-            26 metros de frente $7,500 por metro cuadrado 81-1126-8716."
-
-  caption: "SANTA CATARINA - LA BANDA 3 Recámaras 1 1/2baños $40,000 81-1680-2755."
-"""
+"""Parseo de <image:title> y <image:caption> del sitemap a campos estructurados."""
 from __future__ import annotations
 
 import re
@@ -60,14 +45,11 @@ _RXF: dict[str, re.Pattern] = {
     "metros_frente":   re.compile(r"([\d.,]+)\s*metros?\s+de\s+frente", re.I),
     "hectareas":       re.compile(r"([\d.,]+)\s*hect[áa]reas?", re.I),
 }
-# Terreno: "Metros Cuadrados" NO seguido de construcción/bodega/oficina.
-# El lookahead negativo descarta esas variantes; lo que queda es terreno.
 _RX_TERRENO = re.compile(
     r"([\d.,]+)\s*Metros\s+Cuadrados"
     r"(?!\s*de\s*(?:Construcci|bodega|Oficina))",
     re.I,
 )
-# Baños: "3baños", "2.5 baños", "1 1/2baños"
 _RX_BANOS = re.compile(r"(\d+(?:\.\d+)?(?:\s+1/2)?)\s*ba[ñn]os?", re.I)
 _RX_PRECIO = re.compile(r"\$\s*([\d.,]+)")
 _RX_POR_M2 = re.compile(r"\$\s*[\d.,]+\s*(?:por\s+metro\s+cuadrado|x\s*m2)", re.I)
@@ -105,15 +87,30 @@ def parsear_caption(caption: str | None) -> dict[str, Any]:
         out["mas_iva"] = bool(_RX_MAS_IVA.search(caption))
         posiciones.append(m.start())
 
-    # ---- ubicación: todo lo que está antes del primer campo detectado ----
-    corte = min(posiciones) if posiciones else len(caption)
-    ubic = caption[:corte].strip(" .-\u00b7")
-    if " - " in ubic:
-        zona, colonia = ubic.split(" - ", 1)
-        out["zona"], out["colonia"] = zona.strip(), colonia.strip(" .")
-    elif ubic:
-        out["zona"] = ubic
+    # ---- ubicación: el texto ANTES del primer campo detectado ----
+    # Si no se detectó ningún campo, NO adivinamos ubicación (antes se colaba
+    # todo el texto del anuncio). Y validamos que parezca una zona/colonia real.
+    corte = min(posiciones) if posiciones else 0
+    ubic = caption[:corte].strip(" .-\u00b7") if corte else ""
+    if _ubicacion_plausible(ubic):
+        if " - " in ubic:
+            zona, colonia = ubic.split(" - ", 1)
+            out["zona"], out["colonia"] = zona.strip(), colonia.strip(" .")
+        else:
+            out["zona"] = ubic
     return out
+
+
+def _ubicacion_plausible(texto: str) -> bool:
+    """Las zonas/colonias son cortas y en MAYÚSCULAS (CUMBRES, VALLE ORIENTE).
+    El texto de un anuncio es largo y/o en minúsculas, así que lo rechazamos."""
+    if not texto or len(texto) > 80:
+        return False
+    letras = [c for c in texto if c.isalpha()]
+    if not letras:
+        return False
+    proporcion_mayus = sum(1 for c in letras if c.isupper()) / len(letras)
+    return proporcion_mayus >= 0.6
 
 
 def parsear_entrada(titulo: str | None, caption: str | None) -> dict[str, Any]:
