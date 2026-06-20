@@ -264,7 +264,7 @@ def cosechar_indice(cliente, cfg: dict | None = None) -> ResultadoIndice:
     """
     res = ResultadoIndice()
     for url_cat in descargar_grupos(cliente):
-        slug, numero = partes_categoria(url_cat)
+        slug, _numero = partes_categoria(url_cat)
         trans, tipo, zona = partes_slug(slug)
         res.categorias_total += 1
         res.paginas_total += 1
@@ -292,6 +292,6 @@ def cosechar_indice(cliente, cfg: dict | None = None) -> ResultadoIndice:
             # El registro más completo gana (un aviso puede estar en varias
             # categorías: rico en la suya, mínimo en otra más amplia).
             if previo is None or _riqueza(rec) > _riqueza(previo):
-                res.registros[idv] = {**rec, "categoria": numero}
-        res.categorias_ok.add(numero)
+                res.registros[idv] = {**rec, "categoria": slug}
+        res.categorias_ok.add(slug)
     return res

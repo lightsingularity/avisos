@@ -142,7 +142,9 @@ def test_cosechar_indice_cubre_todo_el_catalogo():
     res = cosechar_indice(cliente)
 
     assert res.categorias_total == 1
-    assert res.categorias_ok == {NUMERO}
+    # La categoría se identifica por su SLUG (único por zona+tipo), no por el
+    # número de la URL (que el sitio comparte entre zonas del mismo tipo).
+    assert res.categorias_ok == {SLUG}
     assert res.cobertura == 1.0
     # UNA sola solicitud por categoría basta para TODO el catálogo (K_Avisos).
     assert set(res.registros) == set(ids)
@@ -151,7 +153,7 @@ def test_cosechar_indice_cubre_todo_el_catalogo():
     trans, tipo, zona = partes_slug(SLUG)
     ricos = {a["id_aviso"] for a in parsear_avisos(P1, SLUG)}
     for idv in ricos:
-        assert res.registros[idv]["categoria"] == NUMERO
+        assert res.registros[idv]["categoria"] == SLUG
         assert "precio" in res.registros[idv]
 
     # Aviso solo-id (en K_Avisos pero no renderizado en la página 1): registro
@@ -162,7 +164,7 @@ def test_cosechar_indice_cubre_todo_el_catalogo():
         assert m["tipo_transaccion"] == trans
         if zona is not None:
             assert m["zona"] == zona
-        assert m["categoria"] == NUMERO
+        assert m["categoria"] == SLUG
         assert "precio" not in m
 
 
@@ -177,6 +179,25 @@ def test_cosechar_categoria_caida_no_cuenta_como_ok():
     assert res.registros == {}
 
 
+def test_cobertura_no_colapsa_por_numero_compartido():
+    # El sitio usa el MISMO número de URL para todas las zonas de un tipo
+    # (p. ej. 966501 = "venta-casa" en cualquier zona). Dos categorías distintas
+    # con el mismo número deben contar como DOS categorías cubiertas, no una;
+    # si no, la cobertura se hunde y se omitirían las bajas para siempre.
+    from scraper.indice import URL_GRUPOS
+    base = "https://www.avisosdeocasion.com/Portada/Indice"
+    u1 = f"{base}/venta-casa-CARRETERA-NACIONAL/966501"
+    u2 = f"{base}/venta-casa-CUMBRES/966501"          # mismo número, otra zona
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           f'<url><loc>{u1}</loc></url><url><loc>{u2}</loc></url></urlset>')
+    cliente = ClienteFixture({URL_GRUPOS: xml, u1: P1, u2: P1})
+    res = cosechar_indice(cliente)
+    assert res.categorias_total == 2
+    assert res.categorias_ok == {"venta-casa-CARRETERA-NACIONAL", "venta-casa-CUMBRES"}
+    assert res.cobertura == 1.0
+
+
 # ----------------- integración: dos fuentes + bajas seguras -----------------
 # Estos tests ejercen el MERGE/bajas de run.py (no el parseo), así que construimos
 # el ResultadoIndice a mano con registros con el esquema que produce el parser.
@@ -189,8 +210,12 @@ def _entrada(id_aviso, titulo, caption):
     )
 
 
+# La categoría se identifica por su slug (único por zona+tipo).
+CAT = "venta-casa-CUMBRES"
+
+
 def _rec(idv, **extra):
-    base = {"id_aviso": idv, "categoria": NUMERO,
+    base = {"id_aviso": idv, "categoria": CAT,
             "url": f"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso={idv}",
             "tipo_transaccion": "venta", "tipo_inmueble": "casa", "zona": "CUMBRES"}
     base.update(extra)
@@ -200,7 +225,7 @@ def _rec(idv, **extra):
 def _indice(registros, ok=True, total=1):
     return ResultadoIndice(
         registros={r["id_aviso"]: r for r in registros},
-        categorias_ok={NUMERO} if ok else set(),
+        categorias_ok={CAT} if ok else set(),
         categorias_total=total, paginas_ok=1 if ok else 0, paginas_total=1)
 
 

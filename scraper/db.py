@@ -160,8 +160,9 @@ def estado_actual(dir_eventos=None) -> dict[str, dict]:
                 "precio": d.get("precio"),
                 "unidad": d.get("precio_unidad", "total"),
                 "tiene_datos": bool(d.get("tipo_inmueble") or d.get("precio")),
-                # Categoría del índice (numCategoria) si vino de esa fuente; sirve
-                # para decidir con seguridad si un aviso ausente puede darse de baja.
+                # Categoría del índice (slug, p. ej. "venta-casa-CUMBRES") si vino
+                # de esa fuente; sirve para decidir con seguridad si un aviso
+                # ausente puede darse de baja.
                 "categoria": d.get("categoria"),
             }
         elif e == "precio" and ev["id"] in estado:
