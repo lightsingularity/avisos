@@ -11,9 +11,8 @@ from scraper.http_polite import ClienteEducado
 from scraper.indice import (
     URL_GRUPOS,
     _parsear_grupos,
-    iterar_paginas,
-    parsear_paginacion,
-    parsear_tarjetas,
+    ids_categoria,
+    parsear_avisos,
     partes_categoria,
 )
 from scraper.sitemap import URL_SITEMAP, parsear_sitemap
@@ -110,33 +109,36 @@ def calibrar_indice(cliente) -> None:
         print("El sitemap de grupos no trajo URLs de categoría; revisa el formato.")
         return
 
-    # Capturamos una categoría con varias páginas (hasta 2) como muestra.
+    # Una categoría como muestra: con UN GET, el <input name="json"> trae el
+    # catálogo completo (K_Avisos) y los objetos ricos de la página 1 (Avisos).
     url_cat = urls[0]
     slug, numero = partes_categoria(url_cat)
     print(f"Muestra: {slug} ({numero}) -> {url_cat}")
-    total_tarjetas = 0
-    for i, pag in enumerate(iterar_paginas(cliente, url_cat, max_paginas=2), start=1):
-        if not pag.ok or pag.html is None:
-            print(f"  Página {i}: descarga FALLÓ ({pag.url})")
-            continue
-        ruta = FIXTURES / f"indice_{slug}_p{i}.html"
-        ruta.write_text(pag.html, encoding="utf-8")
-        actual, total = parsear_paginacion(pag.html)
-        tarjetas = parsear_tarjetas(pag.html, slug)
-        total_tarjetas += len(tarjetas)
-        print(f"  Página {i}: {ruta.name} | 'Pág. {actual} de {total}' | "
-              f"{len(tarjetas)} tarjetas")
-        if tarjetas:
-            t = tarjetas[0]
-            claves = {k: t.get(k) for k in (
-                "id_aviso", "tipo_transaccion", "tipo_inmueble", "zona",
-                "colonia", "precio", "precio_unidad")}
-            print(f"    1ª tarjeta: {claves}")
-            faltan = [k for k in ("id_aviso", "tipo_transaccion", "precio") if not t.get(k)]
-            if faltan:
-                print(f"    OJO faltan campos clave {faltan} -> afinar scraper/indice.py")
-    print(f"Total de tarjetas parseadas en la muestra: {total_tarjetas}")
-    print("Compara con el contador 'N resultados' de la página de categoría.")
+    try:
+        html = cliente.get(url_cat).text
+    except Exception as exc:
+        print(f"  Descarga FALLÓ: {exc}")
+        return
+
+    ruta = FIXTURES / f"indice_{slug}_p1.html"
+    ruta.write_text(html, encoding="utf-8")
+    ids, total = ids_categoria(html)
+    avisos = parsear_avisos(html, slug)
+    print(f"  {ruta.name} | K_Avisos: {len(ids)} (la página declara {total}) | "
+          f"objetos ricos en pág. 1: {len(avisos)}")
+    if not ids:
+        print("  OJO: 0 ids -> el <input name='json'> cambió de formato; "
+              "afinar scraper/indice.py")
+    if avisos:
+        a = avisos[0]
+        claves = {k: a.get(k) for k in (
+            "id_aviso", "tipo_transaccion", "tipo_inmueble", "zona",
+            "colonia", "precio", "precio_unidad", "recamaras", "m2_construccion")}
+        print(f"    1er aviso rico: {claves}")
+        faltan = [k for k in ("id_aviso", "tipo_transaccion", "precio") if not a.get(k)]
+        if faltan:
+            print(f"    OJO faltan campos clave {faltan} -> afinar scraper/indice.py")
+    print("Compara K_Avisos con el contador 'N resultados' de la página de categoría.")
     print("===============================================================")
 
 

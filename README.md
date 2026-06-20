@@ -11,11 +11,12 @@ días en mercado, cambios de precio).
 GitHub Actions  (diario, 07:00 Monterrey)
    └─ python -m scraper
         1. Lee robots.txt y lo respeta
-        2. Fuente 1 — sitemap_bienesraices.xml  ← "novedades" (~859 avisos, 1 solicitud)
+        2. Fuente 1 — sitemap_bienesraices.xml  ← "novedades" (~893 avisos, 1 solicitud)
         3. Fuente 2 — índice: las páginas de categoría de sitemap_grupos_bienesraices.xml
-             (~63 categorías) completan el catálogo (~2,332). Combina ambas fuentes y
-             DEDUPLICA por id de aviso (el id canónico sale del href al detalle, no de la foto)
-        4. Parsea título/caption (sitemap) y tarjetas (índice): zona, colonia, rec., baños, m², precio
+             (~62 categorías) completan el catálogo (~2,332). Cada categoría se lee con UNA
+             solicitud: la página incrusta su catálogo completo (K_Avisos) y los objetos ricos
+             de la 1ª página en un JSON. Combina ambas fuentes y DEDUPLICA por id de aviso
+        4. Parsea título/caption (sitemap) y el JSON del índice: zona, colonia, rec., baños, m², precio
         5. Visita la página de detalle SOLO de avisos nuevos sin caption (cortésmente, 1 req/s)
         6. Diff contra el estado conocido → eventos: alta / precio / baja / realta
              (bajas solo entre avisos cuyas páginas se leyeron bien hoy: nunca bajas falsas)
@@ -86,10 +87,11 @@ en el repo y escribe en el log:
 
 - El total de avisos del sitemap de novedades y el número de categorías del
   índice (compáralo con el contador "Bienes Raíces N" del sitio web).
-- Para la muestra de categoría: cuántas tarjetas se parsearon y los campos clave
-  de la primera (id, transacción, precio…). Si avisa que faltan campos clave o
-  que la descarga falló (403), baja la carpeta `tests/fixtures/` recién creada y
-  pásala a **Claude Code**: *"recalibra scraper/indice.py contra estos fixtures"*.
+- Para la muestra de categoría: cuántos ids trae el catálogo (`K_Avisos`), cuántos
+  objetos ricos parseó la 1ª página y los campos clave del primero (id, transacción,
+  precio…). Si avisa que faltan campos clave o que la descarga falló (403), baja la
+  carpeta `tests/fixtures/` recién creada y pásala a **Claude Code**:
+  *"recalibra scraper/indice.py contra estos fixtures"*.
 - Si las páginas de detalle arrojan campos. Si dice "NINGUNO — afinar
   detail_parser.py", baja la carpeta `tests/fixtures/` recién creada y pásala a
   **Claude Code**: *"afina scraper/detail_parser.py contra estos fixtures"*. Es
@@ -140,7 +142,7 @@ streamlit run app.py              # tablero en localhost
 
 - [ ] Repo privado creado con todos los archivos.
 - [ ] `config.yaml` tiene tu correo en `contacto`.
-- [ ] Workflow **Calibración** en verde; las tarjetas del índice se parsean bien.
+- [ ] Workflow **Calibración** en verde; el catálogo del índice (K_Avisos) se parsea bien.
 - [ ] Workflow **Scrape diario** (manual) en verde; captura ≈ contador "Bienes
       Raíces N" del sitio (catálogo completo, no solo novedades).
 - [ ] Workflow **Scrape diario** hace commit de `data/eventos/`.
@@ -169,7 +171,7 @@ streamlit run app.py              # tablero en localhost
 scraper/
   http_polite.py    cliente con robots.txt, 1 req/s, reintentos, UA identificado
   sitemap.py        descarga/parseo del sitemap de novedades (fuente 1)
-  indice.py         páginas de categoría → tarjetas (fuente 2, catálogo completo)
+  indice.py         páginas de categoría → JSON K_Avisos (fuente 2, catálogo completo)
   atributos.py      regex compartidas de "chips" (rec., baños, m²…) y precio
   caption_parser.py título+caption → campos estructurados (probado con datos reales)
   detail_parser.py  enriquecimiento desde páginas de detalle (calibrable)

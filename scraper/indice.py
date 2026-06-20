@@ -1,39 +1,50 @@
 """Segunda fuente de captura: las páginas de categoría del índice.
 
-El sitemap de novedades (sitemap.py) trae solo ~859 avisos. El catálogo COMPLETO
+El sitemap de novedades (sitemap.py) trae solo ~893 avisos. El catálogo COMPLETO
 (~2,332) se alcanza recorriendo además las páginas de categoría listadas en
 `sitemap_grupos_bienesraices.xml`, con el patrón:
 
     /Portada/Indice/{transaccion}-{tipo}-{ZONA-CON-GUIONES}/{numCategoria}
 
-Cada página es HTML renderizado en el servidor (sin JavaScript), muestra
-"Pág. 1 de N" y una rejilla de tarjetas. De cada tarjeta sacamos:
+Cómo trae los datos la página (verificado contra fixtures reales): NO son tarjetas
+HTML que haya que raspar, ni la paginación son enlaces GET. La página incrusta un
+`<input type="hidden" name="json">` con TODO lo necesario:
 
-  - id_aviso (CANÓNICO): del href hacia /Detalle/BienesRaices?Aviso=XXXXXXXX.
-    OJO: el nombre del archivo de la foto trae un id de 6 dígitos que es el id de
-    FOTO, no el del aviso; por eso el id sale del enlace, no de la imagen.
-  - tipo_transaccion: de la ETIQUETA de la tarjeta (VENTA/RENTA/TRASPASO), porque
-    una página "venta-casa" puede contener una tarjeta de RENTA.
-  - tipo_inmueble y zona: del slug de la URL de categoría.
-  - colonia, precio, precio_unidad y atributos (plantas, recámaras, baños,
-    m²…): del texto de la tarjeta, con las reglas compartidas de atributos.py.
+    {
+      "Registros": 242,
+      "K_Avisos": [32353380, 32364699, ...],   # los 242 ids de la categoría
+      "Avisos":   [ {K_Av, Precio, ZonMun, Col, Rec, Banios, Plantas,
+                     m2Const, m2Terr, ...}, ... ]   # objetos ricos de ESTA página
+    }
 
-Diseño robusto a propósito (no dependemos de nombres de clases CSS, que el sitio
-puede cambiar): las tarjetas se delimitan por sus enlaces al detalle y la
-paginación se sigue leyendo los href reales del pie de página.
+De ahí sale todo:
+
+  - `K_Avisos` da el CATÁLOGO COMPLETO de la categoría con UNA sola solicitud
+    GET (no hay que paginar; la paginación real del sitio es un POST con token
+    antiforgery a /Portada/PostIndice, frágil y evitable).
+  - `Avisos` trae los objetos ricos de la página 1 (precio, colonia, recámaras,
+    superficies…), ya estructurados (sin raspar texto ni superíndices `m²`).
+  - id_aviso (CANÓNICO): el campo `K_Av` (8 dígitos). En la tarjeta visible el
+    enlace es `/Detalle/PostBienesRaices?Aviso=…`; guardamos siempre la URL
+    canónica `/Detalle/BienesRaices?Aviso=…` (la misma del sitemap) para que la
+    deduplicación entre fuentes case por id.
+  - tipo_transaccion, tipo_inmueble y zona: del slug de la categoría (las páginas
+    de categoría son homogéneas: una "venta-casa" lista ventas de casas).
+
+Los ids de `K_Avisos` que no aparezcan como objeto rico en la página 1 (el resto
+de páginas) se registran igual con los campos derivables del slug; eso basta para
+el conteo del catálogo y la detección segura de bajas, y el sitemap aporta los
+campos ricos de los que sí cubre.
 """
 from __future__ import annotations
 
+import html as htmlmod
+import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Iterator
-from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
-
-from .atributos import RX_CHIPS, parsear_chips, parsear_precio
-from .caption_parser import _TIPOS, _zona_plausible
+from .caption_parser import _TIPOS
 from .http_polite import BASE
 
 URL_GRUPOS = "https://www.avisosdeocasion.com/sitemap_grupos_bienesraices.xml"
@@ -41,12 +52,9 @@ _NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
 # /Portada/Indice/{slug}/{numCategoria}
 RX_INDICE = re.compile(r"/Portada/Indice/([^/?#]+)/(\d+)")
-# id canónico del aviso en el href de la tarjeta
-RX_AVISO_HREF = re.compile(r"/Detalle/BienesRaices\?Aviso=\d+", re.I)
-RX_AVISO_ID = re.compile(r"[?&]Aviso=(\d+)", re.I)
-# Etiqueta de la tarjeta. En MAYÚSCULAS para no casar texto descriptivo.
-RX_ETIQUETA = re.compile(r"\b(VENTA|RENTA|TRASPASO)\b")
-RX_PAGINACION = re.compile(r"P[áa]g\.?\s*(\d+)\s*de\s*(\d+)", re.I)
+# Valor del <input name="json"> con el catálogo (las comillas internas vienen
+# como &quot;, así que dentro del value no hay comillas reales que cortar).
+_RX_JSON_VAL = re.compile(r'value="(\{[^"]*\})"', re.S)
 
 
 # --------------------------- sitemap de grupos ---------------------------
@@ -123,193 +131,106 @@ def partes_slug(slug: str) -> tuple[str | None, str | None, str | None]:
     return transaccion, tipo_inmueble, zona
 
 
-def _transaccion_etiqueta(texto: str) -> str | None:
-    m = RX_ETIQUETA.search(texto)
-    return m.group(1).lower() if m else None
+# --------------------------- JSON incrustado -----------------------------
+def extraer_busqueda(html: str) -> dict | None:
+    """Devuelve el objeto JSON del `<input name="json">` con el catálogo.
 
-
-# --------------------------- tarjetas ------------------------------------
-def _ids_en(nodo) -> set[str]:
-    ids: set[str] = set()
-    for a in nodo.find_all("a", href=RX_AVISO_HREF):
-        m = RX_AVISO_ID.search(a.get("href", ""))
-        if m:
-            ids.add(m.group(1))
-    return ids
-
-
-def _contenedor_tarjeta(ancla):
-    """El mayor ancestro del ancla que sigue refiriéndose a UN SOLO aviso.
-
-    Subimos mientras el padre no introduzca un segundo id de aviso; así
-    aislamos la tarjeta completa sin depender de nombres de clases CSS.
+    Tolerante al orden de atributos y a la presencia de otros inputs 'json':
+    elige el único cuyo valor contiene `K_Avisos`. None si no está o no parsea.
     """
-    nodo = ancla
-    while nodo.parent is not None and getattr(nodo.parent, "name", None) not in (
-        None, "body", "html", "[document]"
-    ):
-        if len(_ids_en(nodo.parent)) > 1:
-            break
-        nodo = nodo.parent
-    return nodo
-
-
-def _colonia(texto: str, zona: str | None) -> str | None:
-    """Colonia desde el texto de la tarjeta (mejor esfuerzo).
-
-    En la tarjeta el orden típico es: ETIQUETA $precio ZONA COLONIA <chips>.
-    Recortamos hasta el primer atributo, quitamos etiqueta/precio y, si el
-    texto arranca repitiendo la zona, la retiramos para quedarnos con la
-    colonia. Para avisos que también están en el sitemap, la colonia del
-    sitemap (más fiable) prevalece en la fusión de run.py.
-    """
-    cortes = [m.start() for rx in RX_CHIPS.values() if (m := rx.search(texto))]
-    fin = min(cortes) if cortes else len(texto)
-    seg = texto[:fin]
-    seg = RX_ETIQUETA.sub(" ", seg)
-    seg = re.sub(r"\$\s*[\d.,]+", " ", seg)
-    seg = re.sub(r"m[áa]s\s+IVA|por\s+metro\s+cuadrado|x\s*m2|/\s*m2", " ", seg, flags=re.I)
-    seg = re.sub(r"\s+", " ", seg).strip(" -·|.")
-    if zona and seg.upper().startswith(zona.upper()):
-        seg = seg[len(zona):].strip(" -·|.")
-    seg = re.sub(r"\s*\+?\d[\d\s().\-]{6,}$", "", seg).strip(" -·|.")
-    if seg and len(seg) <= 60 and _zona_plausible(seg):
-        return seg
+    for crudo in _RX_JSON_VAL.findall(html):
+        if "K_Avisos" not in crudo:
+            continue
+        try:
+            return json.loads(htmlmod.unescape(crudo))
+        except ValueError:
+            return None
     return None
 
 
-def parsear_tarjetas(html: str, slug: str) -> list[dict]:
-    """Lista de dicts (uno por aviso) desde el HTML de una página de categoría."""
-    trans_slug, tipo_inmueble, zona = partes_slug(slug)
-    sopa = BeautifulSoup(html, "html.parser")
-
-    contenedores: dict[str, object] = {}
-    for a in sopa.find_all("a", href=RX_AVISO_HREF):
-        m = RX_AVISO_ID.search(a.get("href", ""))
-        if not m:
-            continue
-        idv = m.group(1)
-        cont = _contenedor_tarjeta(a)
-        previo = contenedores.get(idv)
-        # Nos quedamos con el contenedor de más texto (la tarjeta, no un thumb).
-        if previo is None or len(cont.get_text(strip=True)) > len(previo.get_text(strip=True)):
-            contenedores[idv] = cont
-
-    registros: list[dict] = []
-    for idv, cont in contenedores.items():
-        texto = cont.get_text(" ", strip=True)
-        rec: dict = {
-            "id_aviso": idv,
-            "url": f"{BASE}/Detalle/BienesRaices?Aviso={idv}",
-            "tipo_transaccion": _transaccion_etiqueta(texto) or trans_slug,
-        }
-        if tipo_inmueble:
-            rec["tipo_inmueble"] = tipo_inmueble
-        if zona:
-            rec["zona"] = zona
-        rec.update(parsear_precio(texto))
-        chips = parsear_chips(texto)
-        rec.update(chips)
-        # Una tarjeta real trae precio o atributos; un enlace suelto al detalle
-        # (barras de "destacados", "también te puede interesar") no, y se descarta.
-        if "precio" not in rec and not chips:
-            continue
-        col = _colonia(texto, zona)
-        if col:
-            rec["colonia"] = col
-        registros.append(rec)
-    return registros
+def ids_categoria(html: str) -> tuple[list[str], int]:
+    """(ids de TODA la categoría, total declarado) desde `K_Avisos`/`Registros`."""
+    data = extraer_busqueda(html)
+    if not data:
+        return [], 0
+    ids = [str(x) for x in data.get("K_Avisos", []) if x]
+    total = data.get("Registros")
+    return ids, int(total) if isinstance(total, int) else len(ids)
 
 
-# --------------------------- paginación ----------------------------------
-def parsear_paginacion(html: str) -> tuple[int, int]:
-    """(pagina_actual, total_paginas) leyendo 'Pág. X de N'. (1, 1) si no hay."""
-    m = RX_PAGINACION.search(html)
-    if not m:
-        texto = BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
-        m = RX_PAGINACION.search(texto)
-    return (int(m.group(1)), int(m.group(2))) if m else (1, 1)
+# ----------------------------- registros ---------------------------------
+# Campos numéricos del objeto JSON -> columnas de db.py (solo si vienen > 0).
+_MAPA_ATRIB: list[tuple[str, str]] = [
+    ("plantas", "Plantas"),
+    ("recamaras", "Rec"),
+    ("m2_construccion", "m2Const"),
+    ("m2_terreno", "m2Terr"),
+    ("m2_oficina", "m2Ofna"),
+    ("m2_bodega", "m2Bodega"),
+    ("metros_frente", "mFrente"),
+]
 
 
-def mapa_paginas(html: str, url_categoria: str) -> dict[int, str]:
-    """{numero_pagina: url} a partir de los enlaces reales del paginador.
-
-    Robusto al formato exacto de la URL de paginación (query, ruta o lo que
-    sea): tomamos el href tal cual lo publica el sitio, exigiendo solo que el
-    enlace sea numérico y apunte a la MISMA categoría.
-    """
-    _, numero = partes_categoria(url_categoria)
-    sopa = BeautifulSoup(html, "html.parser")
-    salida: dict[int, str] = {}
-    for a in sopa.find_all("a", href=True):
-        txt = a.get_text(strip=True)
-        if not txt.isdigit():
-            continue
-        href = a["href"]
-        if numero and numero not in href:
-            continue
-        salida[int(txt)] = urljoin(url_categoria, href)
-    return salida
+def _pos(v) -> float | None:
+    """El valor como float si es un número positivo; None si es 0 o no numérico."""
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
 
 
-def _plantilla_pagina(url: str, n: int) -> str | None:
-    """Convierte la URL de la página `n` en plantilla con '{p}' en su lugar.
-
-    Sirve para sintetizar páginas faltantes cuando el paginador se trunca
-    (p. ej. "1 2 3 … 8"): reemplaza la última aparición aislada del número.
-    """
-    pat = re.compile(r"(?<!\d)" + re.escape(str(n)) + r"(?!\d)")
-    coincidencias = list(pat.finditer(url))
-    if not coincidencias:
-        return None
-    ult = coincidencias[-1]
-    return url[:ult.start()] + "{p}" + url[ult.end():]
+def _registro_base(idv: str, trans, tipo, zona) -> dict:
+    rec: dict = {"id_aviso": idv, "url": f"{BASE}/Detalle/BienesRaices?Aviso={idv}"}
+    if trans:
+        rec["tipo_transaccion"] = trans
+    if tipo:
+        rec["tipo_inmueble"] = tipo
+    if zona:
+        rec["zona"] = zona
+    return rec
 
 
-@dataclass
-class Pagina:
-    url: str
-    html: str | None
-    ok: bool
+def _registro_rico(obj: dict, trans, tipo, zona) -> dict:
+    """Mapea un objeto de `Avisos` a un registro con columnas de db.py."""
+    idv = str(obj["K_Av"])
+    # La zona del slug es la canónica de la categoría; si faltara, ZonMun.
+    z = zona or (str(obj.get("ZonMun") or "").strip() or None)
+    rec = _registro_base(idv, trans, tipo, z)
+
+    col = str(obj.get("Col") or "").strip()
+    if col:
+        rec["colonia"] = col
+
+    # Precio: m2Precio>0 => por m² (terrenos); si es USD lo OMITIMOS (no hay
+    # columna de moneda y mezclarlo con MXN falsearía $/m²). Para los avisos que
+    # también están en el sitemap, ese precio (MXN, fiable) prevalece en run.py.
+    if not obj.get("USD"):
+        por_m2 = _pos(obj.get("m2Precio"))
+        total = _pos(obj.get("Precio"))
+        if por_m2:
+            rec["precio"], rec["precio_unidad"] = int(por_m2), "m2"
+        elif total:
+            rec["precio"], rec["precio_unidad"] = int(total), "total"
+
+    for col_db, clave in _MAPA_ATRIB:
+        v = _pos(obj.get(clave))
+        if v is not None:
+            rec[col_db] = v
+
+    banos = (obj.get("Banios") or 0) + 0.5 * (obj.get("MedBan") or 0)
+    if banos > 0:
+        rec["banos"] = float(banos)
+    return rec
 
 
-def iterar_paginas(cliente, url_categoria: str, max_paginas: int = 50) -> Iterator[Pagina]:
-    """Recorre las páginas 1..N de una categoría y entrega su HTML.
-
-    Entrega un `Pagina(url, html, ok)` por página. `ok=False` (html None)
-    señala una descarga fallida, para que run.py NO dé de baja avisos de
-    categorías que no se pudieron leer por completo.
-    """
-    try:
-        html1 = cliente.get(url_categoria).text
-    except Exception:
-        yield Pagina(url_categoria, None, False)
-        return
-    yield Pagina(url_categoria, html1, True)
-
-    _, total = parsear_paginacion(html1)
-    encontradas = mapa_paginas(html1, url_categoria)
-    tope = min(total, max_paginas) if total else max_paginas
-    if tope <= 1:
-        return
-
-    plantilla = None
-    if encontradas:
-        n0 = min(encontradas)
-        plantilla = _plantilla_pagina(encontradas[n0], n0)
-
-    for k in range(2, tope + 1):
-        if k in encontradas:
-            url_k = encontradas[k]
-        elif plantilla:
-            url_k = plantilla.format(p=k)
-        else:
-            continue
-        try:
-            html_k = cliente.get(url_k).text
-            yield Pagina(url_k, html_k, True)
-        except Exception:
-            yield Pagina(url_k, None, False)
+def parsear_avisos(html: str, slug: str) -> list[dict]:
+    """Registros ricos (uno por aviso) de los objetos `Avisos` de la página."""
+    data = extraer_busqueda(html)
+    if not data:
+        return []
+    trans, tipo, zona = partes_slug(slug)
+    return [
+        _registro_rico(o, trans, tipo, zona)
+        for o in data.get("Avisos", [])
+        if isinstance(o, dict) and o.get("K_Av")
+    ]
 
 
 # --------------------------- cosecha -------------------------------------
@@ -323,38 +244,54 @@ class ResultadoIndice:
 
     @property
     def cobertura(self) -> float:
-        """Fracción de categorías descargadas por completo (0.0 a 1.0)."""
+        """Fracción de categorías leídas por completo (0.0 a 1.0)."""
         if not self.categorias_total:
             return 0.0
         return len(self.categorias_ok) / self.categorias_total
 
 
+def _riqueza(rec: dict) -> int:
+    """Cuántos campos de datos trae (para preferir el registro más completo)."""
+    return sum(1 for k in rec if k not in ("id_aviso", "url", "categoria"))
+
+
 def cosechar_indice(cliente, cfg: dict | None = None) -> ResultadoIndice:
-    """Recorre TODAS las categorías y devuelve los registros deduplicados.
+    """Recorre TODAS las categorías (1 GET c/u) y devuelve registros deduplicados.
 
-    Una categoría cuenta como 'ok' solo si TODAS sus páginas se descargaron;
-    así run.py sabe entre qué avisos puede calcular bajas con seguridad.
+    Una categoría cuenta como 'ok' si su página se leyó y entregó el JSON con
+    `K_Avisos`; como ese JSON ya trae el catálogo COMPLETO de la categoría, run.py
+    puede decidir con seguridad qué avisos ausentes dar de baja.
     """
-    cfg = cfg or {}
-    icfg = cfg.get("indice") if isinstance(cfg.get("indice"), dict) else {}
-    max_paginas = int(icfg.get("max_paginas", 50))
-
     res = ResultadoIndice()
     for url_cat in descargar_grupos(cliente):
         slug, numero = partes_categoria(url_cat)
+        trans, tipo, zona = partes_slug(slug)
         res.categorias_total += 1
-        cat_ok = True
-        vio_alguna = False
-        for pag in iterar_paginas(cliente, url_cat, max_paginas):
-            res.paginas_total += 1
-            if not pag.ok or pag.html is None:
-                cat_ok = False
-                continue
-            res.paginas_ok += 1
-            vio_alguna = True
-            for rec in parsear_tarjetas(pag.html, slug):
-                rec["categoria"] = numero
-                res.registros.setdefault(rec["id_aviso"], rec)
-        if cat_ok and vio_alguna:
-            res.categorias_ok.add(numero)
+        res.paginas_total += 1
+        try:
+            html = cliente.get(url_cat).text
+        except Exception:
+            continue
+        data = extraer_busqueda(html)
+        if not data:
+            continue
+        res.paginas_ok += 1
+
+        ricos = {
+            r["id_aviso"]: r
+            for r in (
+                _registro_rico(o, trans, tipo, zona)
+                for o in data.get("Avisos", [])
+                if isinstance(o, dict) and o.get("K_Av")
+            )
+        }
+        for x in data.get("K_Avisos", []):
+            idv = str(x)
+            rec = ricos.get(idv) or _registro_base(idv, trans, tipo, zona)
+            previo = res.registros.get(idv)
+            # El registro más completo gana (un aviso puede estar en varias
+            # categorías: rico en la suya, mínimo en otra más amplia).
+            if previo is None or _riqueza(rec) > _riqueza(previo):
+                res.registros[idv] = {**rec, "categoria": numero}
+        res.categorias_ok.add(numero)
     return res
