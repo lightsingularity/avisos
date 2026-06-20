@@ -8,6 +8,14 @@ import yaml
 from scraper.caption_parser import parsear_entrada
 from scraper.detail_parser import parsear_detalle
 from scraper.http_polite import ClienteEducado
+from scraper.indice import (
+    URL_GRUPOS,
+    _parsear_grupos,
+    iterar_paginas,
+    parsear_paginacion,
+    parsear_tarjetas,
+    partes_categoria,
+)
 from scraper.sitemap import URL_SITEMAP, parsear_sitemap
 
 FIXTURES = Path(__file__).parent / "tests" / "fixtures"
@@ -77,7 +85,59 @@ def main() -> None:
         print(f"Detalle {e.id_aviso} -> {ruta.name} | campos clave: "
               f"{ok or 'NINGUNO - afinar detail_parser.py'}")
 
+    calibrar_indice(cliente)
     print("\nListo.")
+
+
+def calibrar_indice(cliente) -> None:
+    """Captura fixtures REALES de páginas de categoría y valida el parseo.
+
+    Corre en GitHub Actions (cuyo runner sí alcanza el sitio); guarda el HTML en
+    tests/fixtures/ para que las pruebas no dependan de descargas en vivo.
+    """
+    print("\n================ ÍNDICE (páginas de categoría) ================")
+    print(f"Descargando sitemap de grupos: {URL_GRUPOS}")
+    try:
+        r = cliente.get(URL_GRUPOS)
+        r.raise_for_status()
+    except Exception as exc:
+        print(f"ERROR al pedir el sitemap de grupos: {exc}")
+        return
+
+    urls = _parsear_grupos(r.text)
+    print(f"Categorías en el índice: {len(urls)}")
+    if not urls:
+        print("El sitemap de grupos no trajo URLs de categoría; revisa el formato.")
+        return
+
+    # Capturamos una categoría con varias páginas (hasta 2) como muestra.
+    url_cat = urls[0]
+    slug, numero = partes_categoria(url_cat)
+    print(f"Muestra: {slug} ({numero}) -> {url_cat}")
+    total_tarjetas = 0
+    for i, pag in enumerate(iterar_paginas(cliente, url_cat, max_paginas=2), start=1):
+        if not pag.ok or pag.html is None:
+            print(f"  Página {i}: descarga FALLÓ ({pag.url})")
+            continue
+        ruta = FIXTURES / f"indice_{slug}_p{i}.html"
+        ruta.write_text(pag.html, encoding="utf-8")
+        actual, total = parsear_paginacion(pag.html)
+        tarjetas = parsear_tarjetas(pag.html, slug)
+        total_tarjetas += len(tarjetas)
+        print(f"  Página {i}: {ruta.name} | 'Pág. {actual} de {total}' | "
+              f"{len(tarjetas)} tarjetas")
+        if tarjetas:
+            t = tarjetas[0]
+            claves = {k: t.get(k) for k in (
+                "id_aviso", "tipo_transaccion", "tipo_inmueble", "zona",
+                "colonia", "precio", "precio_unidad")}
+            print(f"    1ª tarjeta: {claves}")
+            faltan = [k for k in ("id_aviso", "tipo_transaccion", "precio") if not t.get(k)]
+            if faltan:
+                print(f"    OJO faltan campos clave {faltan} -> afinar scraper/indice.py")
+    print(f"Total de tarjetas parseadas en la muestra: {total_tarjetas}")
+    print("Compara con el contador 'N resultados' de la página de categoría.")
+    print("===============================================================")
 
 
 if __name__ == "__main__":

@@ -7,27 +7,12 @@ en cadena: JSON-LD, metaetiquetas, y texto visible. La zona NO se toma de aquí
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from bs4 import BeautifulSoup
 
+from .atributos import RX_CHIPS, num as _num
 from .caption_parser import clasificar_titulo, parsear_caption
-
-_RX_CHIPS: dict[str, re.Pattern] = {
-    "plantas":         re.compile(r"(\d+(?:\.\d+)?)\s*Plantas?\b", re.I),
-    "recamaras":       re.compile(r"(\d+(?:\.\d+)?)\s*Rec\.", re.I),
-    "banos":           re.compile(r"(\d+(?:\.\d+)?)\s*B[ñn]\.", re.I),
-    "m2_construccion": re.compile(r"([\d.,]+)\s*m2\s*Const", re.I),
-    "m2_terreno":      re.compile(r"([\d.,]+)\s*m2\s*Terr", re.I),
-    "metros_frente":   re.compile(r"([\d.,]+)\s*m\s*Fren", re.I),
-    "m2_oficina":      re.compile(r"([\d.,]+)\s*m2\s*Ofc", re.I),
-    "m2_bodega":       re.compile(r"([\d.,]+)\s*m2\s*Bod", re.I),
-}
-
-
-def _num(s: str) -> float:
-    return float(s.replace(",", ""))
 
 
 def parsear_detalle(html: str) -> dict[str, Any]:
@@ -86,7 +71,7 @@ def parsear_detalle(html: str) -> dict[str, Any]:
         if k in ("zona", "colonia"):
             continue
         out.setdefault(k, v)
-    for campo, rx in _RX_CHIPS.items():
+    for campo, rx in RX_CHIPS.items():
         if campo not in out:
             m = rx.search(texto)
             if m:

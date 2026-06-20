@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<!--
+  FIXTURE: reconstrucción fiel del formato PÚBLICO de una página de categoría de
+  avisosdeocasion.com (/Portada/Indice/venta-casa-CUMBRES/966501), página 1 de 2.
+
+  NO es una captura en vivo: el entorno donde se generó tiene bloqueado el host
+  por la lista de egreso de red. Reproduce, según la documentación del formato,
+  lo que el parser necesita ejercitar: tarjetas con etiqueta VENTA/RENTA, precio,
+  zona/colonia, línea de atributos en "chips", el id canónico en el href de la
+  tarjeta (8 dígitos) frente al id de FOTO en el nombre de la imagen (6 dígitos),
+  el contador de resultados, la paginación "Pág. 1 de 2" y el pie "Bienes Raíces".
+  Sustituir por capturas reales con calibrate.py cuando haya red al sitio.
+-->
+<html lang="es">
+<head><meta charset="utf-8"><title>Casas en venta en CUMBRES</title></head>
+<body>
+<header><nav><a href="/">Inicio</a> &raquo; Bienes Raíces &raquo; CUMBRES</nav></header>
+
+<main>
+  <div id="CONTADOR_RESULTADOS" class="contador">110 resultados en: <b>Avisos</b></div>
+
+  <section class="resultados">
+
+    <article class="anuncio">
+      <a class="foto" href="/Detalle/BienesRaices?Aviso=32366810">
+        <img src="https://ws.avisosdeocasion.com/fotoswa/2/516891/1/8/0/foto.jpg" alt="Casa en CUMBRES">
+      </a>
+      <div class="info">
+        <span class="etiqueta venta">VENTA</span>
+        <span class="precio">$6,690,000</span>
+        <span class="zona">CUMBRES</span>
+        <span class="colonia">CUMBRES MADEIRA</span>
+        <ul class="atributos">2 Plantas | 3 Rec. | 3.5 Bñ. | 228 m2 Const. | 152 m2 Terr.</ul>
+        <a class="vermas" href="/Detalle/BienesRaices?Aviso=32366810">Ver más</a>
+      </div>
+    </article>
+
+    <article class="anuncio">
+      <a class="foto" href="/Detalle/BienesRaices?Aviso=32366811">
+        <img src="https://ws.avisosdeocasion.com/fotoswa/2/517002/1/8/0/foto.jpg" alt="Casa en CUMBRES">
+      </a>
+      <div class="info">
+        <span class="etiqueta venta">VENTA</span>
+        <span class="precio">$4,250,000</span>
+        <span class="zona">CUMBRES</span>
+        <span class="colonia">CUMBRES PROVENZA</span>
+        <ul class="atributos">1 Planta | 3 Rec. | 2 Bñ. | 180 m2 Const. | 200 m2 Terr.</ul>
+        <a class="vermas" href="/Detalle/BienesRaices?Aviso=32366811">Ver más</a>
+      </div>
+    </article>
+
+    <article class="anuncio">
+      <a class="foto" href="/Detalle/BienesRaices?Aviso=32366812">
+        <img src="https://ws.avisosdeocasion.com/fotoswa/2/517118/1/8/0/foto.jpg" alt="Casa en CUMBRES">
+      </a>
+      <div class="info">
+        <span class="etiqueta renta">RENTA</span>
+        <span class="precio">$25,000</span>
+        <span class="zona">CUMBRES</span>
+        <span class="colonia">CUMBRES ELITE</span>
+        <ul class="atributos">2 Plantas | 3 Rec. | 2.5 Bñ. | 160 m2 Const. | 90 m2 Terr.</ul>
+        <a class="vermas" href="/Detalle/BienesRaices?Aviso=32366812">Ver más</a>
+      </div>
+    </article>
+
+  </section>
+
+  <aside class="destacados">
+    <h3>También te puede interesar</h3>
+    <a href="/Detalle/BienesRaices?Aviso=99999999">Casa de lujo en San Pedro</a>
+  </aside>
+
+  <nav class="paginacion">
+    Pág. 1 de 2
+    <span class="actual">1</span>
+    <a href="/Portada/Indice/venta-casa-CUMBRES/966501/2">2</a>
+    <a class="siguiente" href="/Portada/Indice/venta-casa-CUMBRES/966501/2">Siguiente &raquo;</a>
+  </nav>
+</main>
+
+<footer><span class="total">Bienes Raíces 2,332</span></footer>
+</body>
+</html>

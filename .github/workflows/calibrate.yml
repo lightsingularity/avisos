@@ -32,6 +32,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Sin fixtures nuevos."
           else
-            git commit -m "calibración: fixtures de detalle"
+            git commit -m "calibración: fixtures de detalle e índice"
             git push
           fi

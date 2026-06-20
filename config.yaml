@@ -12,6 +12,18 @@ seg_entre_solicitudes: 1.0
 #   todos     -> todos los avisos nuevos (descripciones completas)
 detalle: faltantes
 
+# Segunda fuente: las páginas de categoría del índice (sitemap_grupos_bienesraices.xml).
+# El sitemap de novedades trae ~859 avisos; sumando el índice se cubre el catálogo
+# completo (~2,332), deduplicado por id de aviso.
+usar_indice: true
+indice:
+  # Mínimo de categorías descargadas por completo para confiar en el catálogo y
+  # calcular bajas. Si la cobertura cae por debajo, esa corrida OMITE las bajas
+  # (evita dar de baja avisos solo porque su página de categoría falló con 403).
+  umbral_cobertura: 0.8
+  # Tope de páginas por categoría (resguardo ante paginaciones inesperadas).
+  max_paginas: 50
+
 # Descarga de imágenes (ver download_photos.py). Mantener en false salvo que
 # cuentes con autorización por escrito del sitio o asumas conscientemente el
 # riesgo: las fotos son obras protegidas según el Aviso Legal del sitio.
