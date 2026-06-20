@@ -4,10 +4,15 @@ El parseo se valida contra un fixture HTML REAL capturado por calibrate.py en
 GitHub Actions (el runner sí alcanza el sitio), NO contra descargas en vivo: el
 sitio está tras CloudFront y el entorno de pruebas puede tener el host bloqueado.
 
+calibrate.py SOBREESCRIBE ese fixture en cada corrida con lo que el sitio muestre
+ese día (cambian el total y qué avisos salen en la página 1). Por eso las pruebas
+de parseo descubren el fixture y validan INVARIANTES, no conteos ni ids fijos.
+
 La página de categoría no expone tarjetas raspables ni paginación GET: incrusta un
 `<input name="json">` con `K_Avisos` (todos los ids de la categoría) y `Avisos`
 (objetos ricos de la página 1). De ahí sale todo.
 """
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,10 +32,14 @@ from scraper.indice import (
 from scraper.sitemap import EntradaSitemap
 
 FIXDIR = Path(__file__).parent / "fixtures"
-SLUG = "venta-casa-CARRETERA-NACIONAL"
+# Descubre el fixture del índice (uno solo) y su slug a partir del nombre.
+_FIX_INDICE = sorted(FIXDIR.glob("indice_*_p1.html"))[0]
+SLUG = re.match(r"indice_(.+)_p1\.html", _FIX_INDICE.name).group(1)
+P1 = _FIX_INDICE.read_text(encoding="utf-8")
+# El número de categoría no está en el nombre del fixture; para la cosecha es solo
+# una etiqueta (lo trae la URL), así que usamos uno cualquiera.
 NUMERO = "966501"
 URL_CAT = f"https://www.avisosdeocasion.com/Portada/Indice/{SLUG}/{NUMERO}"
-P1 = (FIXDIR / f"indice_{SLUG}_p1.html").read_text(encoding="utf-8")
 
 
 # ----------------------------- slug ------------------------------------
@@ -66,35 +75,40 @@ def test_precio_total_y_por_m2():
 def test_extraer_busqueda_trae_catalogo_completo():
     data = extraer_busqueda(P1)
     assert data is not None
+    assert isinstance(data["K_Avisos"], list) and data["K_Avisos"]
     # K_Avisos es el catálogo COMPLETO de la categoría (no solo la página 1).
-    assert data["Registros"] == len(data["K_Avisos"]) == 242
-    # 'Avisos' son los objetos ricos de la página 1 (un subconjunto).
-    assert 0 < len(data["Avisos"]) < len(data["K_Avisos"])
-    assert all(o["K_Av"] in set(data["K_Avisos"]) for o in data["Avisos"])
+    assert data["Registros"] == len(data["K_Avisos"])
+    # 'Avisos' son los objetos ricos de la página 1 (subconjunto del catálogo).
+    assert 0 < len(data["Avisos"]) <= len(data["K_Avisos"])
+    kav = set(data["K_Avisos"])
+    assert all(o["K_Av"] in kav for o in data["Avisos"])
 
 
 def test_ids_categoria():
     ids, total = ids_categoria(P1)
-    assert total == 242 and len(ids) == 242 == len(set(ids))
-    assert all(isinstance(i, str) for i in ids)
+    assert ids and total == len(ids) == len(set(ids))
+    assert all(isinstance(i, str) and i.isdigit() for i in ids)
 
 
 def test_parsear_avisos_campos_y_id_canonico():
-    avisos = {a["id_aviso"]: a for a in parsear_avisos(P1, SLUG)}
-    assert len(avisos) == 23                       # objetos ricos de la página 1
-    a = avisos["32353380"]
-    assert a["id_aviso"] == "32353380"
-    assert a["tipo_transaccion"] == "venta"        # del slug
-    assert a["tipo_inmueble"] == "casa"            # del slug
-    assert a["zona"] == "CARRETERA NACIONAL"       # del slug
-    assert a["colonia"] == "CAMINO A BAHIA ESCONDIDA"   # del campo Col
-    assert a["precio"] == 26_850_000 and a["precio_unidad"] == "total"
-    assert a["plantas"] == 2 and a["recamaras"] == 3 and a["banos"] == 3
-    assert a["m2_construccion"] == 318 and a["m2_terreno"] == 1944
-    # URL CANÓNICA (BienesRaices), no el PostBienesRaices de la tarjeta visible.
-    assert a["url"] == "https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32353380"
-    # Campos en cero del JSON no se inventan.
-    assert "m2_oficina" not in a and "metros_frente" not in a
+    data = extraer_busqueda(P1)
+    avisos = parsear_avisos(P1, SLUG)
+    assert len(avisos) == len(data["Avisos"]) > 0
+    trans, tipo, zona = partes_slug(SLUG)
+    ids = {str(x) for x in data["K_Avisos"]}
+    for a in avisos:
+        assert a["id_aviso"] in ids
+        # URL CANÓNICA (BienesRaices), no el PostBienesRaices de la tarjeta visible.
+        assert a["url"] == (
+            f"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso={a['id_aviso']}")
+        assert a.get("tipo_transaccion") == trans     # del slug
+        assert a.get("tipo_inmueble") == tipo         # del slug
+        if zona is not None:
+            assert a.get("zona") == zona              # del slug
+    # calibrate.py garantiza que el 1er aviso rico trae id, transacción y precio.
+    a0 = avisos[0]
+    assert isinstance(a0["precio"], int) and a0["precio"] > 0
+    assert a0["precio_unidad"] in ("total", "m2")
 
 
 def test_parsear_avisos_sin_json_devuelve_vacio():
@@ -123,32 +137,33 @@ _GRUPOS_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
 
 def test_cosechar_indice_cubre_todo_el_catalogo():
     from scraper.indice import URL_GRUPOS
+    ids, _ = ids_categoria(P1)
     cliente = ClienteFixture({URL_GRUPOS: _GRUPOS_XML, URL_CAT: P1})
     res = cosechar_indice(cliente)
 
     assert res.categorias_total == 1
     assert res.categorias_ok == {NUMERO}
     assert res.cobertura == 1.0
-    # UNA sola solicitud por categoría basta para los 242 ids del catálogo.
-    assert len(res.registros) == 242
+    # UNA sola solicitud por categoría basta para TODO el catálogo (K_Avisos).
+    assert set(res.registros) == set(ids)
 
-    # Aviso rico (estaba en 'Avisos' de la página 1): trae todos los campos.
-    rico = res.registros["32353380"]
-    assert rico["categoria"] == NUMERO
-    assert rico["precio"] == 26_850_000
-    assert rico["colonia"] == "CAMINO A BAHIA ESCONDIDA"
-    assert rico["m2_construccion"] == 318
+    # Avisos ricos (estaban en 'Avisos' de la página 1): traen precio y categoría.
+    trans, tipo, zona = partes_slug(SLUG)
+    ricos = {a["id_aviso"] for a in parsear_avisos(P1, SLUG)}
+    for idv in ricos:
+        assert res.registros[idv]["categoria"] == NUMERO
+        assert "precio" in res.registros[idv]
 
     # Aviso solo-id (en K_Avisos pero no renderizado en la página 1): registro
     # mínimo con lo derivable del slug, listo para que el sitemap lo enriquezca.
-    ids_ricos = {a["id_aviso"] for a in parsear_avisos(P1, SLUG)}
-    id_min = next(i for i in ids_categoria(P1)[0] if i not in ids_ricos)
-    minimo = res.registros[id_min]
-    assert minimo["tipo_transaccion"] == "venta"
-    assert minimo["tipo_inmueble"] == "casa"
-    assert minimo["zona"] == "CARRETERA NACIONAL"
-    assert minimo["categoria"] == NUMERO
-    assert "precio" not in minimo
+    solo_id = [i for i in ids if i not in ricos]
+    if solo_id:
+        m = res.registros[solo_id[0]]
+        assert m["tipo_transaccion"] == trans
+        if zona is not None:
+            assert m["zona"] == zona
+        assert m["categoria"] == NUMERO
+        assert "precio" not in m
 
 
 def test_cosechar_categoria_caida_no_cuenta_como_ok():
