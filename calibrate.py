@@ -143,4 +143,7 @@ def calibrar_indice(cliente) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # TEMPORAL (rama de diagnóstico): corre el diagnóstico de tipo en vez de la
+    # calibración normal. Se revierte antes del PR.
+    import diagnostico_indice
+    diagnostico_indice.main()
