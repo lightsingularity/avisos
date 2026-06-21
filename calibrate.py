@@ -8,6 +8,13 @@ import yaml
 from scraper.caption_parser import parsear_entrada
 from scraper.detail_parser import parsear_detalle
 from scraper.http_polite import ClienteEducado
+from scraper.indice import (
+    URL_GRUPOS,
+    _parsear_grupos,
+    ids_categoria,
+    parsear_avisos,
+    partes_categoria,
+)
 from scraper.sitemap import URL_SITEMAP, parsear_sitemap
 
 FIXTURES = Path(__file__).parent / "tests" / "fixtures"
@@ -77,7 +84,62 @@ def main() -> None:
         print(f"Detalle {e.id_aviso} -> {ruta.name} | campos clave: "
               f"{ok or 'NINGUNO - afinar detail_parser.py'}")
 
+    calibrar_indice(cliente)
     print("\nListo.")
+
+
+def calibrar_indice(cliente) -> None:
+    """Captura fixtures REALES de páginas de categoría y valida el parseo.
+
+    Corre en GitHub Actions (cuyo runner sí alcanza el sitio); guarda el HTML en
+    tests/fixtures/ para que las pruebas no dependan de descargas en vivo.
+    """
+    print("\n================ ÍNDICE (páginas de categoría) ================")
+    print(f"Descargando sitemap de grupos: {URL_GRUPOS}")
+    try:
+        r = cliente.get(URL_GRUPOS)
+        r.raise_for_status()
+    except Exception as exc:
+        print(f"ERROR al pedir el sitemap de grupos: {exc}")
+        return
+
+    urls = _parsear_grupos(r.text)
+    print(f"Categorías en el índice: {len(urls)}")
+    if not urls:
+        print("El sitemap de grupos no trajo URLs de categoría; revisa el formato.")
+        return
+
+    # Una categoría como muestra: con UN GET, el <input name="json"> trae el
+    # catálogo completo (K_Avisos) y los objetos ricos de la página 1 (Avisos).
+    url_cat = urls[0]
+    slug, numero = partes_categoria(url_cat)
+    print(f"Muestra: {slug} ({numero}) -> {url_cat}")
+    try:
+        html = cliente.get(url_cat).text
+    except Exception as exc:
+        print(f"  Descarga FALLÓ: {exc}")
+        return
+
+    ruta = FIXTURES / f"indice_{slug}_p1.html"
+    ruta.write_text(html, encoding="utf-8")
+    ids, total = ids_categoria(html)
+    avisos = parsear_avisos(html, slug)
+    print(f"  {ruta.name} | K_Avisos: {len(ids)} (la página declara {total}) | "
+          f"objetos ricos en pág. 1: {len(avisos)}")
+    if not ids:
+        print("  OJO: 0 ids -> el <input name='json'> cambió de formato; "
+              "afinar scraper/indice.py")
+    if avisos:
+        a = avisos[0]
+        claves = {k: a.get(k) for k in (
+            "id_aviso", "tipo_transaccion", "tipo_inmueble", "zona",
+            "colonia", "precio", "precio_unidad", "recamaras", "m2_construccion")}
+        print(f"    1er aviso rico: {claves}")
+        faltan = [k for k in ("id_aviso", "tipo_transaccion", "precio") if not a.get(k)]
+        if faltan:
+            print(f"    OJO faltan campos clave {faltan} -> afinar scraper/indice.py")
+    print("Compara K_Avisos con el contador 'N resultados' de la página de categoría.")
+    print("===============================================================")
 
 
 if __name__ == "__main__":

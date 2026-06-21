@@ -11,11 +11,16 @@ días en mercado, cambios de precio).
 GitHub Actions  (diario, 07:00 Monterrey)
    └─ python -m scraper
         1. Lee robots.txt y lo respeta
-        2. Descarga sitemap_bienesraices.xml  ← 1 sola solicitud con TODO el inventario
-        3. Parsea título/caption de cada aviso (zona, colonia, rec., baños, m², precio)
-        4. Visita la página de detalle SOLO de avisos nuevos sin caption (cortésmente, 1 req/s)
-        5. Diff contra el estado conocido → eventos: alta / precio / baja / realta
-        6. git commit + push del log de eventos  (solo texto: diffs diminutos)
+        2. Fuente 1 — sitemap_bienesraices.xml  ← "novedades" (~893 avisos, 1 solicitud)
+        3. Fuente 2 — índice: las páginas de categoría de sitemap_grupos_bienesraices.xml
+             (~62 categorías) completan el catálogo (~2,332). Cada categoría se lee con UNA
+             solicitud: la página incrusta su catálogo completo (K_Avisos) y los objetos ricos
+             de la 1ª página en un JSON. Combina ambas fuentes y DEDUPLICA por id de aviso
+        4. Parsea título/caption (sitemap) y el JSON del índice: zona, colonia, rec., baños, m², precio
+        5. Visita la página de detalle SOLO de avisos nuevos sin caption (cortésmente, 1 req/s)
+        6. Diff contra el estado conocido → eventos: alta / precio / baja / realta
+             (bajas solo entre avisos cuyas páginas se leyeron bien hoy: nunca bajas falsas)
+        7. git commit + push del log de eventos  (solo texto: diffs diminutos)
 
 Streamlit Community Cloud  (gratis, conectado al MISMO repo)
    └─ app.py
@@ -37,9 +42,21 @@ Decisiones de diseño importantes:
   reconstruye en segundos (en tu visita al tablero o en cualquier corrida). Por
   eso el tablero funciona en Community Cloud con solo el repo: regenera la base
   al arrancar. Texto plano = diffs perfectos en git.
-- **Guardas de seguridad**: si el sitemap llega vacío o con menos de la mitad de
-  los avisos de ayer, la corrida aborta SIN registrar bajas y GitHub te avisa
-  por correo (un parser roto nunca debe "dar de baja" todo el inventario).
+- **Dos fuentes, deduplicadas**: el `sitemap_bienesraices.xml` es solo de
+  novedades (~859); el catálogo completo (~2,332) se alcanza sumando las páginas
+  de categoría del `sitemap_grupos_bienesraices.xml` (`scraper/indice.py`). Ambas
+  fuentes se combinan y deduplican por id de aviso; cuando un aviso está en las
+  dos, se conserva la descripción del caption del sitemap (el índice no la trae).
+  Se activa con `usar_indice: true` en `config.yaml`.
+- **Guardas de seguridad**: si el sitemap llega vacío o, con fuentes confiables,
+  con menos de la mitad de los avisos de ayer, la corrida aborta SIN registrar
+  bajas y GitHub te avisa por correo (un parser roto nunca debe "dar de baja"
+  todo el inventario).
+- **Sin bajas falsas ante fallos parciales**: el sitio (CloudFront) bloquea
+  páginas de categoría con 403 de forma intermitente. Las bajas se calculan SOLO
+  entre los avisos cuyas categorías se descargaron completas esa corrida; si
+  falla demasiado (cobertura por debajo de `indice.umbral_cobertura`), la corrida
+  omite por completo la detección de bajas en lugar de inventarlas.
 - **Privacidad**: teléfonos y correos de los anunciantes se eliminan del texto
   antes de guardar (`scraper/scrub.py`). Tu análisis no los necesita.
 - **Fotos**: solo se guardan las URLs. La descarga de imágenes existe
@@ -64,11 +81,17 @@ le molesta — es parte de rastrear con la frente en alto. Confirma el cambio.
 ### 3. Calibración (un clic, pestaña Actions)
 
 En tu repo → pestaña **Actions** → habilita los workflows si te lo pide → abre
-**"Calibración (manual)"** → **Run workflow**. Descarga el sitemap real y unas
-páginas de detalle, guarda los fixtures en el repo y escribe en el log:
+**"Calibración (manual)"** → **Run workflow**. Descarga el sitemap real, unas
+páginas de detalle y **una página de categoría del índice**, guarda los fixtures
+en el repo y escribe en el log:
 
-- El total de avisos del sitemap (compáralo con el contador "Bienes Raíces N"
-  del sitio web: confirma que el sitemap trae TODO el inventario).
+- El total de avisos del sitemap de novedades y el número de categorías del
+  índice (compáralo con el contador "Bienes Raíces N" del sitio web).
+- Para la muestra de categoría: cuántos ids trae el catálogo (`K_Avisos`), cuántos
+  objetos ricos parseó la 1ª página y los campos clave del primero (id, transacción,
+  precio…). Si avisa que faltan campos clave o que la descarga falló (403), baja la
+  carpeta `tests/fixtures/` recién creada y pásala a **Claude Code**:
+  *"recalibra scraper/indice.py contra estos fixtures"*.
 - Si las páginas de detalle arrojan campos. Si dice "NINGUNO — afinar
   detail_parser.py", baja la carpeta `tests/fixtures/` recién creada y pásala a
   **Claude Code**: *"afina scraper/detail_parser.py contra estos fixtures"*. Es
@@ -110,7 +133,7 @@ barra lateral.
 ```bash
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -m pytest tests/ -q        # 19 pruebas
+python -m pytest tests/ -q        # 32 pruebas
 python -m scraper && python build_db.py
 streamlit run app.py              # tablero en localhost
 ```
@@ -119,8 +142,10 @@ streamlit run app.py              # tablero en localhost
 
 - [ ] Repo privado creado con todos los archivos.
 - [ ] `config.yaml` tiene tu correo en `contacto`.
-- [ ] Workflow **Calibración** en verde; total del sitemap ≈ contador del sitio.
-- [ ] Workflow **Scrape diario** (manual) en verde y hace commit de `data/eventos/`.
+- [ ] Workflow **Calibración** en verde; el catálogo del índice (K_Avisos) se parsea bien.
+- [ ] Workflow **Scrape diario** (manual) en verde; captura ≈ contador "Bienes
+      Raíces N" del sitio (catálogo completo, no solo novedades).
+- [ ] Workflow **Scrape diario** hace commit de `data/eventos/`.
 - [ ] App desplegada en Streamlit Community Cloud; la URL abre el tablero.
 - [ ] El tablero muestra avisos, métricas y exporta CSV.
 - [ ] Al día siguiente hay un commit nuevo con pocas altas/bajas (ya diferencial).
@@ -132,6 +157,10 @@ streamlit run app.py              # tablero en localhost
 - **Correo de GitHub con job fallido**: abre el log del workflow. "ABORTO" con
   caída anómala = el sitio cambió o tuvo un mal día; si persiste 2 días, corre
   `calibrate.py` y lleva los fixtures a Claude Code.
+- **"Cobertura del índice … se OMITE la detección de bajas"** en el log: ese día
+  el sitio bloqueó (403) demasiadas páginas de categoría; es benigno y esperado
+  de vez en cuando (no marca bajas falsas). Si pasa a diario, recalibra
+  `scraper/indice.py` con fixtures frescos de `calibrate.py`.
 - **Reconstruir la base cuando quieras**: `git pull && python build_db.py`.
 - **Respaldo**: el repo ES el respaldo (texto plano + historial completo).
 - **Tamaño**: ~200 KB de texto al día ≈ decenas de MB al año. Sin problema.
@@ -141,13 +170,15 @@ streamlit run app.py              # tablero en localhost
 ```
 scraper/
   http_polite.py    cliente con robots.txt, 1 req/s, reintentos, UA identificado
-  sitemap.py        descarga/parseo del sitemap (descubrimiento principal)
+  sitemap.py        descarga/parseo del sitemap de novedades (fuente 1)
+  indice.py         páginas de categoría → JSON K_Avisos (fuente 2, catálogo completo)
+  atributos.py      regex compartidas de "chips" (rec., baños, m²…) y precio
   caption_parser.py título+caption → campos estructurados (probado con datos reales)
   detail_parser.py  enriquecimiento desde páginas de detalle (calibrable)
   scrub.py          elimina teléfonos/correos del texto
   events.py         bitácora JSONL (fuente de verdad)
   db.py             SQLite derivado + vista `analisis` ($/m², días en mercado…)
-  run.py            orquestador diario con guardas de seguridad
+  run.py            orquestador diario: combina fuentes, deduplica, guardas de seguridad
 analytics.py        consultas/agregaciones para el tablero (sin Streamlit)
 app.py              tablero Streamlit (Community Cloud o local)
 .streamlit/config.toml         tema del tablero
@@ -156,6 +187,6 @@ app.py              tablero Streamlit (Community Cloud o local)
 calibrate.py        captura fixtures reales y valida parsers
 download_photos.py  descarga de fotos, tras bandera de configuración
 build_db.py         reconstruye data/avisos.db desde la bitácora
-tests/              19 pruebas (scraper + análisis), con capturas reales
+tests/              32 pruebas (scraper + índice + análisis), con capturas reales
 ```
 
