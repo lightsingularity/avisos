@@ -23,6 +23,7 @@ from scraper.atributos import parsear_chips, parsear_precio
 from scraper.indice import (
     ResultadoIndice,
     _parsear_grupos,
+    aprender_clasificacion,
     cosechar_indice,
     extraer_busqueda,
     ids_categoria,
@@ -322,6 +323,60 @@ def test_baja_real_cuando_cobertura_es_buena(monkeypatch, tmp_path):
     # 32366810 sigue (sitemap) y 32366813 sigue (índice) -> no de baja.
     assert con.execute("SELECT fecha_baja FROM avisos WHERE id_aviso='32366810'").fetchone()[0] is None
     assert con.execute("SELECT fecha_baja FROM avisos WHERE id_aviso='32366813'").fetchone()[0] is None
+
+
+# ----------- tipo por código del aviso (no por el slug de la página) -----------
+# El sitio mezcla avisos de otras categorías en una página (p. ej. la página de
+# "venta-terreno-VALLE" lista en su 1ª página casas de VALLE con terreno grande).
+# El tipo debe salir del código del propio aviso (K_Cla3), no del slug.
+_SLUGS_FIX = ["venta-casa-CARRETERA-NACIONAL", "venta-casa-VALLE",
+              "venta-terreno-VALLE", "venta-departamento-VALLE"]
+
+
+def _fix(slug):
+    return (FIXDIR / f"indice_{slug}_p1.html").read_text(encoding="utf-8")
+
+
+def _tiene_fixtures():
+    return all((FIXDIR / f"indice_{s}_p1.html").exists() for s in _SLUGS_FIX)
+
+
+def test_aprender_clasificacion_mapa_codigos():
+    if not _tiene_fixtures():
+        return  # solo corre cuando están capturados los fixtures multi-categoría
+    paginas = []
+    for s in _SLUGS_FIX:
+        trans, tipo, _ = partes_slug(s)
+        data = extraer_busqueda(_fix(s))
+        paginas.append((trans, tipo, [o for o in data["Avisos"] if isinstance(o, dict)]))
+    clasif = aprender_clasificacion(paginas)
+    # Voto mayoritario sobre TODO el catálogo: cada código recupera su tipo real.
+    assert clasif.tipo[120] == "casa"
+    assert clasif.tipo[121] == "departamento"
+    assert clasif.tipo[122] == "terreno"
+    assert clasif.trans[260] == "venta"
+
+
+def test_cosecha_tipa_por_codigo_no_por_slug():
+    if not _tiene_fixtures():
+        return
+    base = "https://www.avisosdeocasion.com/Portada/Indice"
+    urls = {f"{base}/{s}/{i}": _fix(s) for i, s in enumerate(_SLUGS_FIX, start=1)}
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           + "".join(f"<url><loc>{u}</loc></url>" for u in urls) + "</urlset>")
+    from scraper.indice import URL_GRUPOS
+    res = cosechar_indice(ClienteFixture({URL_GRUPOS: xml, **urls}))
+
+    # 32360783 es una CASA (con construcción) que el sitio lista en la página de
+    # TERRENOS de VALLE; antes quedaba 'terreno', ahora debe quedar 'casa'.
+    assert res.registros["32360783"]["tipo_inmueble"] == "casa"
+    # Un terreno real (sin construcción) de esa misma página sí queda 'terreno'.
+    assert res.registros["32365352"]["tipo_inmueble"] == "terreno"
+    # Invariante: ningún aviso con construcción quedó tipado como terreno.
+    malos = [i for i, r in res.registros.items()
+             if r.get("m2_construccion") and r.get("tipo_inmueble") == "terreno"]
+    assert malos == []
 
 
 def test_grupos_sitemap_filtra_indice():

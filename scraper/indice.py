@@ -42,6 +42,7 @@ import html as htmlmod
 import json
 import re
 import xml.etree.ElementTree as ET
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from .caption_parser import _TIPOS
@@ -187,9 +188,20 @@ def _registro_base(idv: str, trans, tipo, zona) -> dict:
     return rec
 
 
-def _registro_rico(obj: dict, trans, tipo, zona) -> dict:
-    """Mapea un objeto de `Avisos` a un registro con columnas de db.py."""
+def _registro_rico(obj: dict, trans, tipo, zona, clasif: "Clasificacion | None" = None) -> dict:
+    """Mapea un objeto de `Avisos` a un registro con columnas de db.py.
+
+    El tipo/transacción del SLUG de la categoría no es fiable: las páginas mezclan
+    avisos de otras categorías (p. ej. una página "venta-terreno-VALLE" lista en su
+    primera página casas de VALLE con terreno grande). El objeto trae su PROPIA
+    clasificación: K_Cla3 = tipo de inmueble, K_Cla2 = transacción. Si tenemos el
+    mapa código→etiqueta (aprendido del catálogo completo), tipamos por el código
+    del aviso; si no, caemos al slug.
+    """
     idv = str(obj["K_Av"])
+    if clasif is not None:
+        tipo = clasif.tipo.get(obj.get("K_Cla3"), tipo)
+        trans = clasif.trans.get(obj.get("K_Cla2"), trans)
     # La zona del slug es la canónica de la categoría; si faltara, ZonMun.
     z = zona or (str(obj.get("ZonMun") or "").strip() or None)
     rec = _registro_base(idv, trans, tipo, z)
@@ -255,14 +267,51 @@ def _riqueza(rec: dict) -> int:
     return sum(1 for k in rec if k not in ("id_aviso", "url", "categoria"))
 
 
+@dataclass
+class Clasificacion:
+    """Mapa código→etiqueta aprendido del catálogo: K_Cla3→tipo, K_Cla2→transacción."""
+    tipo: dict = field(default_factory=dict)
+    trans: dict = field(default_factory=dict)
+
+
+def aprender_clasificacion(paginas) -> Clasificacion:
+    """Aprende los códigos del sitio votando por MAYORÍA sobre todas las categorías.
+
+    `paginas` es un iterable de (trans_slug, tipo_slug, avisos_ricos). Cada aviso
+    rico vota su K_Cla3 -> tipo del slug de SU página y K_Cla2 -> transacción del
+    slug. Como la contaminación entre categorías es minoría (una página de terrenos
+    con casas mezcladas es la excepción), el voto mayoritario recupera el
+    significado real de cada código (p. ej. K_Cla3=120→casa pese a aparecer en
+    páginas de terreno).
+    """
+    voto_tipo: dict = defaultdict(Counter)
+    voto_trans: dict = defaultdict(Counter)
+    for trans_slug, tipo_slug, avisos in paginas:
+        for o in avisos:
+            k3, k2 = o.get("K_Cla3"), o.get("K_Cla2")
+            if tipo_slug and k3 is not None:
+                voto_tipo[k3][tipo_slug] += 1
+            if trans_slug and k2 is not None:
+                voto_trans[k2][trans_slug] += 1
+    return Clasificacion(
+        tipo={c: cnt.most_common(1)[0][0] for c, cnt in voto_tipo.items()},
+        trans={c: cnt.most_common(1)[0][0] for c, cnt in voto_trans.items()},
+    )
+
+
 def cosechar_indice(cliente, cfg: dict | None = None) -> ResultadoIndice:
     """Recorre TODAS las categorías (1 GET c/u) y devuelve registros deduplicados.
+
+    Dos pasadas: primero descarga todas las páginas y aprende el mapa de códigos
+    de clasificación (para no fiarse del slug de cada página, que mezcla tipos);
+    luego construye los registros tipando cada aviso rico por SU propio código.
 
     Una categoría cuenta como 'ok' si su página se leyó y entregó el JSON con
     `K_Avisos`; como ese JSON ya trae el catálogo COMPLETO de la categoría, run.py
     puede decidir con seguridad qué avisos ausentes dar de baja.
     """
     res = ResultadoIndice()
+    paginas: list[tuple] = []   # (slug, trans, tipo, zona, k_avisos, avisos_ricos)
     for url_cat in descargar_grupos(cliente):
         slug, _numero = partes_categoria(url_cat)
         trans, tipo, zona = partes_slug(slug)
@@ -276,22 +325,20 @@ def cosechar_indice(cliente, cfg: dict | None = None) -> ResultadoIndice:
         if not data:
             continue
         res.paginas_ok += 1
+        res.categorias_ok.add(slug)
+        avisos = [o for o in data.get("Avisos", []) if isinstance(o, dict) and o.get("K_Av")]
+        kav = [str(x) for x in data.get("K_Avisos", [])]
+        paginas.append((slug, trans, tipo, zona, kav, avisos))
 
-        ricos = {
-            r["id_aviso"]: r
-            for r in (
-                _registro_rico(o, trans, tipo, zona)
-                for o in data.get("Avisos", [])
-                if isinstance(o, dict) and o.get("K_Av")
-            )
-        }
-        for x in data.get("K_Avisos", []):
-            idv = str(x)
+    clasif = aprender_clasificacion((t, tp, av) for _, t, tp, _, _, av in paginas)
+
+    for slug, trans, tipo, zona, kav, avisos in paginas:
+        ricos = {str(o["K_Av"]): _registro_rico(o, trans, tipo, zona, clasif) for o in avisos}
+        for idv in kav:
             rec = ricos.get(idv) or _registro_base(idv, trans, tipo, zona)
             previo = res.registros.get(idv)
             # El registro más completo gana (un aviso puede estar en varias
             # categorías: rico en la suya, mínimo en otra más amplia).
             if previo is None or _riqueza(rec) > _riqueza(previo):
                 res.registros[idv] = {**rec, "categoria": slug}
-        res.categorias_ok.add(slug)
     return res
