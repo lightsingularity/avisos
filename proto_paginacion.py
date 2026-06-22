@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
-"""Reverse-engineering ciclo 3: encontrar el payload exacto de la página 2.
-
-El JS hace: $("#hdnPagina").val(pagina); $("#frmResultadosxTex").submit() -> POST
-/Portada/PostIndice. Replicarlo tal cual devolvió la página 1. Probamos variantes
-del payload para ver cuál AVANZA de página (mide ids nuevos vs página 1).
-"""
+"""RE ciclo 4 (decisivo): caminar páginas 1..6 por POST y ver si el conjunto
+único crece ~23 por página (paginación limpia) o se estanca (estado/bug)."""
 import json
 from pathlib import Path
 
@@ -47,49 +43,34 @@ def main():
     for u in descargar_grupos(cli):
         h = cli.get(u).text
         d = extraer_busqueda(h)
-        if d and d.get("Registros", 0) > len(d.get("Avisos", [])) > 0:
+        if d and d.get("Registros", 0) > 60:   # varias páginas
             url_cat, data1, html1 = u, d, h
             break
     if not url_cat:
-        print("sin categoría multipágina"); return
+        print("sin categoría grande"); return
     slug, _ = partes_categoria(url_cat)
-    P1 = {str(o.get("K_Av")) for o in data1.get("Avisos", [])}
-    print(f"Categoría {slug} | Registros={data1.get('Registros')} | page1 ids[:3]={list(P1)[:3]}")
+    reg = data1.get("Registros")
+    print(f"Categoría {slug} | Registros={reg} | K_Avisos={len(data1.get('K_Avisos', []))}")
 
     base = _campos(html1)
     HEADERS["Referer"] = url_cat
+    kav = {str(x) for x in data1.get("K_Avisos", [])}
 
-    # Variante A: tal cual, pagina=2
-    a = dict(base); a["pagina"] = "2"
-    # Variante B: pagina=2 + json vacío (forzar recomputo del server)
-    b = dict(base); b["pagina"] = "2"; b["json"] = ""
-    # Variante C: pagina=2 + json con Avisos=[] (que no pueda "eco" la pág.1)
-    c = dict(base); c["pagina"] = "2"
-    try:
-        jc = json.loads(base.get("json") or "{}"); jc["Avisos"] = []
-        c["json"] = json.dumps(jc, ensure_ascii=False)
-    except Exception as e:
-        c = None; print("no pude rearmar json:", e)
-    # Variante D: pagina=1 -> 0-indexado? probamos "1" a ver si difiere de "2"
-    d1 = dict(base); d1["pagina"] = "1"
-
-    pruebas = [("A pagina=2", a), ("B pagina=2 json=''", b)]
-    if c:
-        pruebas.append(("C pagina=2 Avisos=[]", c))
-    pruebas.append(("D pagina=1", d1))
-    for nombre, campos in pruebas:
+    todos = set()
+    for pg in range(1, 7):
+        campos = dict(base)
+        campos["pagina"] = str(pg)
         code, ids = _post(cli, campos, HEADERS)
-        print(f"  {nombre:28} -> HTTP {code} Avisos={len(ids)} "
-              f"NUEVOS_vs_p1={len(set(ids) - P1)} first3={ids[:3]}")
+        nuevos = len(set(ids) - todos)
+        todos |= set(ids)
+        dentro = len(set(ids) & kav)
+        print(f"  pagina={pg}: HTTP {code} Avisos={len(ids)} NUEVOS={nuevos} "
+              f"(acum.únicos={len(todos)}) enKAvisos={dentro} first2={ids[:2]}")
 
-    # Variante E: token también en header
-    e = dict(base); e["pagina"] = "2"
-    he = dict(HEADERS); he["RequestVerificationToken"] = base.get("__RequestVerificationToken", "")
-    code, ids = _post(cli, e, he)
-    print(f"  {'E token-en-header':28} -> HTTP {code} Avisos={len(ids)} "
-          f"NUEVOS_vs_p1={len(set(ids) - P1)} first3={ids[:3]}")
-
-    print("\nVEREDICTO: la variante con NUEVOS≈página completa es la que pagina.")
+    print(f"\nÚnicos acumulados pág.1-6: {len(todos)}  (esperado ~{6 * 23} si pagina limpio; "
+          f"Registros={reg})")
+    print("VEREDICTO B:", "FUNCIONA (crece ~23/pág)" if len(todos) >= 100
+          else "NO avanza limpio (estado/bug) -> usar Camino A")
 
 
 if __name__ == "__main__":
