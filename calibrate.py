@@ -143,4 +143,6 @@ def calibrar_indice(cliente) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # TEMPORAL (rama de prototipo): prueba la paginación POST en vez de calibrar.
+    import proto_paginacion
+    proto_paginacion.main()
