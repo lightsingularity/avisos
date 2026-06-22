@@ -53,9 +53,7 @@ def main() -> None:
     if not campos:
         print("No se encontró el form frmResultadosxTex.")
         return
-    print("Campos del form:", sorted(campos))
     print("token presente:", bool(campos.get("__RequestVerificationToken")))
-    campos["pagina"] = "2"
 
     headers = {
         "X-Requested-With": "XMLHttpRequest",
@@ -66,36 +64,37 @@ def main() -> None:
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
     }
-    r = cli.sesion.post(POST_URL, data=campos, headers=headers, timeout=30)
-    if "charset=" not in r.headers.get("Content-Type", "").lower():
-        r.encoding = "utf-8"
-    print(f"\nPOST {POST_URL} (pagina=2) -> HTTP {r.status_code} | "
-          f"Content-Type={r.headers.get('Content-Type')} | {len(r.text)} chars")
-    print("primeros 300 chars:", repr(r.text[:300]))
 
-    d2 = None
-    try:
-        d2 = json.loads(r.text)
-    except ValueError:
-        d2 = extraer_busqueda(r.text)   # por si devuelve HTML con el <input json>
-    if not isinstance(d2, dict):
-        print("\nRESULTADO: no pude interpretar la respuesta (¿token/cookie/headers?). "
-              "Camino B necesita más trabajo o no aplica.")
-        return
+    # Recorre las páginas 1..N por POST y mide cuántos avisos NUEVOS trae cada una
+    # (decisivo: si 'pagina' se ignora, cada página repite la 1 -> nuevos≈0).
+    vistos = set(ids_p1)
+    print(f"\npág.1 (GET): Avisos={len(ids_p1)}  (acumulado únicos={len(vistos)})")
+    for pg in (2, 3):
+        campos["pagina"] = str(pg)
+        r = cli.sesion.post(POST_URL, data=campos, headers=headers, timeout=30)
+        if "charset=" not in r.headers.get("Content-Type", "").lower():
+            r.encoding = "utf-8"
+        try:
+            d = json.loads(r.text)
+        except ValueError:
+            d = extraer_busqueda(r.text)
+        if not isinstance(d, dict):
+            print(f"pág.{pg} (POST): HTTP {r.status_code} -> no interpretable: {r.text[:160]!r}")
+            return
+        av = d.get("Avisos") or []
+        ids = [str(o.get("K_Av")) for o in av]
+        nuevos = set(ids) - vistos
+        print(f"pág.{pg} (POST): HTTP {r.status_code} Avisos={len(av)} "
+              f"NUEVOS={len(nuevos)} (acumulado únicos={len(vistos | set(ids))})")
+        if av:
+            o = av[0]
+            print("   muestra:", {k: o.get(k) for k in ("K_Av", "Precio", "ZonMun", "Col", "K_Cla3")})
+        vistos |= set(ids)
 
-    av2 = d2.get("Avisos") or (d2.get("d", {}) if isinstance(d2.get("d"), dict) else {}).get("Avisos") or []
-    ids_p2 = [str(o.get("K_Av")) for o in av2]
-    print(f"\nRESPUESTA pág.2: claves={list(d2)[:10]} | Avisos={len(av2)}")
-    print("  ids pág.2 (primeros):", ids_p2[:5])
-    print("  ¿distintos de pág.1?:", bool(ids_p2) and set(ids_p2).isdisjoint(ids_p1))
-    print("  ¿dentro de K_Avisos?:", bool(ids_p2) and set(ids_p2) <= set(ids_kav))
-    if av2:
-        o = av2[0]
-        print("  muestra:", {k: o.get(k) for k in
-                             ("K_Av", "Precio", "m2Precio", "ZonMun", "Col", "K_Cla2", "K_Cla3")})
-        print("\nRESULTADO: ✅ Camino B FUNCIONA — la página 2 trae avisos ricos con precio.")
-    else:
-        print("\nRESULTADO: respuesta interpretable pero SIN Avisos; revisar formato.")
+    print(f"\nÚnicos acumulados pág.1-3: {len(vistos)} de Registros={data1.get('Registros')} "
+          f"(K_Avisos={len(ids_kav)})")
+    print("VEREDICTO: si cada página POST trae ~", len(ids_p1),
+          "NUEVOS, la paginación avanza y Camino B sirve.")
 
 
 if __name__ == "__main__":
