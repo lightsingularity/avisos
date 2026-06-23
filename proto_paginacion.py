@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Sonda de paginación POST /Portada/PostIndice — hipótesis de COOKIE de estado.
+"""Sonda iter 3 — el servidor hidrata los K_Avisos que le mando.
 
-Iteración 1 (cursor ClavAviso): el POST devuelve JSON correcto pero SIEMPRE la
-página 1; el form `pagina` y `ClavAviso` se ignoran. Pista decisiva: la sesión
-tiene una cookie `Pagina` (y `Sorts`). El sitio guarda el estado de paginación en
-cookies (las pone el JS con document.cookie) y el servidor lee la página de AHÍ.
+Hallazgos previos: el POST a /Portada/PostIndice devuelve SIEMPRE el primer tramo
+(23) y NO lee `pagina`, ni `ClavAviso`, ni la cookie `Pagina`. El JS (btnPaginacion
+en UtilComplementos) recalcula la página y reenvía el form; el payload de búsqueda
+(`jsonBusqueda`) trae `maxRegs:500, firstRegs:23` (tamaño/offset). Hipótesis:
 
-Esta iteración:
-  FASE 1 — vuelca el JS correcto (UtilComplementos/UtilConfiguraciones, etc.)
-           buscando cómo se setea la cookie `Pagina` y se llama a PostIndice.
-  FASE 2 — camina las páginas SETEANDO la cookie `Pagina=n` antes de cada POST y
-           verifica que los ids devueltos sean el tramo K_Avisos[(n-1)*23 : n*23].
+  A) el servidor hidrata los ids de `json.K_Avisos` que YO mando (cap = tamaño de
+     página). Como ya tengo TODOS los K_Avisos de la categoría, basta mandar tramos.
+  B) subir `firstRegs`/`maxRegs` en `jsonBusqueda` devuelve un lote grande de una.
+
+Prueba ambas y vuelca el btnPaginacion completo y el jsonBusqueda real.
 """
 import json
 import re
@@ -24,34 +24,13 @@ from scraper.http_polite import BASE, ClienteEducado
 from scraper.indice import descargar_grupos, extraer_busqueda, partes_categoria
 
 POST_URL = f"{BASE}/Portada/PostIndice"
-JS_FILES = ["/js/min/UtilComplementos.min.js", "/js/min/UtilConfiguraciones.min.js",
-            "/js/min/UtilBusqueda.min.js", "/js/min/Portada.min.js", "/js/min/Util.min.js"]
-CLAVES_JS = ("btnPaginacion", "paginacionDirecta", "PostIndice", "Pagina",
-             "document.cookie", "Cookie")
 
 
-def _form_campos(html: str):
+def _form_campos(html):
     f = BeautifulSoup(html, "html.parser").find("form", id="frmResultadosxTex")
-    if not f:
-        return {}, None
     campos = {i.get("name"): (i.get("value") or "")
               for i in f.find_all("input") if i.get("name")}
     return campos, campos.get("__RequestVerificationToken")
-
-
-def _token_de(html: str):
-    m = re.search(r'name="__RequestVerificationToken"[^>]*value="([^"]+)"', html)
-    return m.group(1) if m else None
-
-
-def _set_pagina(cli, n):
-    """Actualiza (o crea) la cookie de estado `Pagina`."""
-    for c in list(cli.sesion.cookies):
-        if c.name == "Pagina":
-            cli.sesion.cookies.set("Pagina", str(n), domain=c.domain, path=c.path)
-            return f"{c.domain}{c.path}"
-    cli.sesion.cookies.set("Pagina", str(n), domain="www.avisosdeocasion.com", path="/")
-    return "www.avisosdeocasion.com/"
 
 
 def _post(cli, campos, headers):
@@ -65,22 +44,7 @@ def _post(cli, campos, headers):
         d = extraer_busqueda(r.text)
     av = d.get("Avisos", []) if isinstance(d, dict) else []
     ids = [str(o.get("K_Av")) for o in av if isinstance(o, dict) and o.get("K_Av")]
-    return r, d, ids, _token_de(r.text)
-
-
-def _dump_js(cli):
-    print("\n===== FASE 1: JS del paginador (archivos correctos) =====")
-    for ruta in JS_FILES:
-        try:
-            js = cli.get(BASE + ruta).text
-        except Exception as e:
-            print(f"  {ruta}: no se pudo bajar ({e})"); continue
-        encontrados = {k: js.find(k) for k in CLAVES_JS}
-        encontrados = {k: i for k, i in encontrados.items() if i >= 0}
-        print(f"\n  --- {ruta} ({len(js)} bytes) — claves: {list(encontrados)} ---")
-        for k, i in encontrados.items():
-            if k in ("Pagina", "Cookie", "document.cookie", "PostIndice"):
-                print(f"  · ...{k}...: {js[max(0,i-160):i+160]}")
+    return r, ids
 
 
 def _elegir_categoria(cli):
@@ -99,57 +63,64 @@ def main():
     cli = ClienteEducado(contacto=cfg.get("contacto", "proto"), seg_entre_solicitudes=1.0)
     cli.cargar_robots()
 
-    _dump_js(cli)
+    # --- volcar btnPaginacion completo ---
+    print("===== btnPaginacion (UtilComplementos.min.js) =====")
+    js = cli.get(BASE + "/js/min/UtilComplementos.min.js").text
+    i = js.find("function btnPaginacion")
+    print(js[i:i + 1500] if i >= 0 else "no encontrado")
 
-    print("\n===== FASE 2: categoría multi-página =====")
+    print("\n===== categoría =====")
     url_cat, html1, data1 = _elegir_categoria(cli)
     if not url_cat:
         print("sin categoría grande"); return
     slug, _ = partes_categoria(url_cat)
     kav = [str(x) for x in data1.get("K_Avisos", [])]
-    ricos1 = [str(o.get("K_Av")) for o in data1.get("Avisos", [])
-              if isinstance(o, dict) and o.get("K_Av")]
     reg = data1.get("Registros")
     base, tok = _form_campos(html1)
-    print(f"Categoría {slug} | Registros={reg} | K_Avisos={len(kav)} | ricos pág1={len(ricos1)}")
-    print(f"K_Avisos[0:3]={kav[:3]} … esperado pág2 = K_Avisos[23:26]={kav[23:26]}")
-    print(f"Cookie Pagina inicial: "
-          f"{[(c.name,c.value,c.domain) for c in cli.sesion.cookies if c.name in ('Pagina','Sorts')]}")
+    print(f"{slug} | Registros={reg} | K_Avisos={len(kav)}")
+    print(f"jsonBusqueda REAL: {base.get('jsonBusqueda')}")
+    try:
+        jj = json.loads(base["json"]); jb = json.loads(base["jsonBusqueda"])
+    except Exception as e:
+        print("no parsea json/jsonBusqueda:", e); return
+    print(f"json keys={list(jj)} K_Avisos_en_json={len(jj.get('K_Avisos', []))}")
 
     headers = {
         "X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": url_cat,
-        "Accept": "application/json, text/plain, */*",
+        "Accept": "application/json, text/plain, */*", "RequestVerificationToken": tok or "",
         "Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin",
     }
 
-    print("\n----- COOKIE Pagina=n antes de cada POST -----")
-    vistos = set(ricos1)
-    tok_actual = tok
-    for n in range(2, 8):
-        dom = _set_pagina(cli, n)
-        campos = dict(base)
-        campos["pagina"] = str(n)
-        if tok_actual:
-            campos["__RequestVerificationToken"] = tok_actual
-            headers["RequestVerificationToken"] = tok_actual
-        r, d, ids, ntok = _post(cli, campos, headers)
-        esperado = kav[(n - 1) * 23: n * 23]
-        coincide = ids[:len(esperado)] == esperado
-        nuevos = len(set(ids) - vistos)
-        vistos |= set(ids)
-        setck = r.headers.get("Set-Cookie", "")
-        ckpag = next((c.value for c in cli.sesion.cookies if c.name == "Pagina"), None)
-        print(f"  Pagina={n} (cookie@{dom}): HTTP {r.status_code} Avisos={len(ids)} "
-              f"NUEVOS={nuevos} acum={len(vistos)} ¿=K_Avisos[{(n-1)*23}:{n*23}]? {coincide} "
-              f"first={ids[:2]} cookiePagPost={ckpag} setCk={'Pagina' in setck}")
-        if ntok:
-            tok_actual = ntok
-        if not ids:
-            print("    (vacío; corto)"); break
+    def prueba(nombre, campos, esperado_prefijo=None):
+        _, ids = _post(cli, campos, headers)
+        ok = (ids[:len(esperado_prefijo)] == esperado_prefijo) if esperado_prefijo else None
+        print(f"  [{nombre}] Avisos={len(ids)} first={ids[:2]} last={ids[-1:]} "
+              f"¿prefijo esperado? {ok}")
+        return ids
 
-    print(f"\nÚnicos acumulados: {len(vistos)} de Registros={reg}")
-    print("VEREDICTO:", "✅ AVANZA (cookie Pagina funciona)" if len(vistos) > 80
-          else "❌ no avanza — ver JS y Set-Cookie arriba")
+    print("\n===== TEST A: mandar json.K_Avisos = tramo de ids que ya tengo =====")
+    # A1: tramo página 2 (23 ids)
+    jjA = dict(jj); jjA["K_Avisos"] = [int(x) for x in kav[23:46]]
+    cA = dict(base); cA["json"] = json.dumps(jjA, ensure_ascii=False)
+    prueba("A1 K_Avisos[23:46]", cA, kav[23:46])
+    # A2: tramo grande (92 ids) — ¿respeta el tamaño o capa en 23?
+    jjA2 = dict(jj); jjA2["K_Avisos"] = [int(x) for x in kav[23:115]]
+    cA2 = dict(base); cA2["json"] = json.dumps(jjA2, ensure_ascii=False)
+    prueba("A2 K_Avisos[23:115] (92)", cA2, kav[23:28])
+
+    print("\n===== TEST B: subir firstRegs/maxRegs en jsonBusqueda =====")
+    print(f"  jsonBusqueda keys={list(jb)}")
+    jbB = dict(jb)
+    for k in list(jbB):
+        if k.lower() == "firstregs":
+            jbB[k] = 300
+        if k.lower() == "maxregs":
+            jbB[k] = 300
+    jbB.setdefault("firstRegs", 300)
+    cB = dict(base); cB["jsonBusqueda"] = json.dumps(jbB, ensure_ascii=False)
+    prueba("B firstRegs/maxRegs=300", cB)
+
+    print("\nFIN sonda iter 3")
 
 
 if __name__ == "__main__":
