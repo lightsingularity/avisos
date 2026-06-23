@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""Sonda iter 3 — el servidor hidrata los K_Avisos que le mando.
+"""Sonda iter 4 — escribe el resultado a un archivo versionado (no solo al log).
 
-Hallazgos previos: el POST a /Portada/PostIndice devuelve SIEMPRE el primer tramo
-(23) y NO lee `pagina`, ni `ClavAviso`, ni la cookie `Pagina`. El JS (btnPaginacion
-en UtilComplementos) recalcula la página y reenvía el form; el payload de búsqueda
-(`jsonBusqueda`) trae `maxRegs:500, firstRegs:23` (tamaño/offset). Hipótesis:
+calibrate.yml hace `git add tests/fixtures` y commitea si hay cambios; por eso el
+resultado se vuelca a tests/fixtures/_paginacion_resultado.txt y se puede leer con
+`git fetch` (sin depender de leer el log de Actions, que ha estado intermitente).
 
-  A) el servidor hidrata los ids de `json.K_Avisos` que YO mando (cap = tamaño de
-     página). Como ya tengo TODOS los K_Avisos de la categoría, basta mandar tramos.
-  B) subir `firstRegs`/`maxRegs` en `jsonBusqueda` devuelve un lote grande de una.
-
-Prueba ambas y vuelca el btnPaginacion completo y el jsonBusqueda real.
+Mecanismo ya confirmado: /Portada/PostIndice IGNORA `pagina`, `ClavAviso` y la
+cookie `Pagina`; el servidor re-corre la búsqueda según `jsonBusqueda`
+(trae `maxRegs`, `firstRegs`). Pruebas decisivas:
+  A) mandar `json.K_Avisos` = un tramo de ids -> ¿hidrata ese tramo?
+  B) subir `firstRegs`/`maxRegs` en `jsonBusqueda` -> ¿devuelve un lote grande
+     (idealmente TODA la categoría) en un solo POST?
 """
 import json
-import re
 import time
 from pathlib import Path
 
@@ -24,6 +23,14 @@ from scraper.http_polite import BASE, ClienteEducado
 from scraper.indice import descargar_grupos, extraer_busqueda, partes_categoria
 
 POST_URL = f"{BASE}/Portada/PostIndice"
+SALIDA = Path("tests/fixtures/_paginacion_resultado.txt")
+_buf: list[str] = []
+
+
+def log(*a):
+    linea = " ".join(str(x) for x in a)
+    print(linea, flush=True)
+    _buf.append(linea)
 
 
 def _form_campos(html):
@@ -63,27 +70,20 @@ def main():
     cli = ClienteEducado(contacto=cfg.get("contacto", "proto"), seg_entre_solicitudes=1.0)
     cli.cargar_robots()
 
-    # --- volcar btnPaginacion completo ---
-    print("===== btnPaginacion (UtilComplementos.min.js) =====")
-    js = cli.get(BASE + "/js/min/UtilComplementos.min.js").text
-    i = js.find("function btnPaginacion")
-    print(js[i:i + 1500] if i >= 0 else "no encontrado")
-
-    print("\n===== categoría =====")
     url_cat, html1, data1 = _elegir_categoria(cli)
     if not url_cat:
-        print("sin categoría grande"); return
+        log("sin categoría grande"); return
     slug, _ = partes_categoria(url_cat)
     kav = [str(x) for x in data1.get("K_Avisos", [])]
     reg = data1.get("Registros")
     base, tok = _form_campos(html1)
-    print(f"{slug} | Registros={reg} | K_Avisos={len(kav)}")
-    print(f"jsonBusqueda REAL: {base.get('jsonBusqueda')}")
+    log(f"Categoría {slug} | Registros={reg} | K_Avisos={len(kav)}")
     try:
         jj = json.loads(base["json"]); jb = json.loads(base["jsonBusqueda"])
     except Exception as e:
-        print("no parsea json/jsonBusqueda:", e); return
-    print(f"json keys={list(jj)} K_Avisos_en_json={len(jj.get('K_Avisos', []))}")
+        log("no parsea json/jsonBusqueda:", e); return
+    log(f"jsonBusqueda keys={list(jb)}")
+    log(f"jsonBusqueda={base['jsonBusqueda'][:400]}")
 
     headers = {
         "X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": url_cat,
@@ -91,37 +91,41 @@ def main():
         "Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin",
     }
 
-    def prueba(nombre, campos, esperado_prefijo=None):
+    def prueba(nombre, campos, esperado=None):
         _, ids = _post(cli, campos, headers)
-        ok = (ids[:len(esperado_prefijo)] == esperado_prefijo) if esperado_prefijo else None
-        print(f"  [{nombre}] Avisos={len(ids)} first={ids[:2]} last={ids[-1:]} "
-              f"¿prefijo esperado? {ok}")
+        ok = (ids[:len(esperado)] == esperado) if esperado else None
+        unicos = len(set(ids))
+        log(f"  [{nombre}] Avisos={len(ids)} únicos={unicos} first={ids[:2]} "
+            f"last={ids[-1:]} ¿prefijo? {ok}")
         return ids
 
-    print("\n===== TEST A: mandar json.K_Avisos = tramo de ids que ya tengo =====")
-    # A1: tramo página 2 (23 ids)
+    log("\n== TEST A: json.K_Avisos = tramo de ids ==")
     jjA = dict(jj); jjA["K_Avisos"] = [int(x) for x in kav[23:46]]
     cA = dict(base); cA["json"] = json.dumps(jjA, ensure_ascii=False)
-    prueba("A1 K_Avisos[23:46]", cA, kav[23:46])
-    # A2: tramo grande (92 ids) — ¿respeta el tamaño o capa en 23?
+    prueba("A1 ids[23:46]", cA, kav[23:46])
     jjA2 = dict(jj); jjA2["K_Avisos"] = [int(x) for x in kav[23:115]]
     cA2 = dict(base); cA2["json"] = json.dumps(jjA2, ensure_ascii=False)
-    prueba("A2 K_Avisos[23:115] (92)", cA2, kav[23:28])
+    prueba("A2 ids[23:115] (92)", cA2, kav[23:28])
 
-    print("\n===== TEST B: subir firstRegs/maxRegs en jsonBusqueda =====")
-    print(f"  jsonBusqueda keys={list(jb)}")
-    jbB = dict(jb)
-    for k in list(jbB):
-        if k.lower() == "firstregs":
-            jbB[k] = 300
-        if k.lower() == "maxregs":
-            jbB[k] = 300
-    jbB.setdefault("firstRegs", 300)
-    cB = dict(base); cB["jsonBusqueda"] = json.dumps(jbB, ensure_ascii=False)
-    prueba("B firstRegs/maxRegs=300", cB)
+    log("\n== TEST B: subir firstRegs/maxRegs en jsonBusqueda ==")
+    for tam in (300, reg):
+        jbB = dict(jb)
+        for k in list(jbB):
+            if k.lower() in ("firstregs", "maxregs"):
+                jbB[k] = int(tam)
+        jbB.setdefault("firstRegs", int(tam)); jbB.setdefault("maxRegs", int(tam))
+        cB = dict(base); cB["jsonBusqueda"] = json.dumps(jbB, ensure_ascii=False)
+        ids = prueba(f"B firstRegs/maxRegs={tam}", cB)
+        log(f"     ¿cubre toda la categoría? {len(set(ids)) >= (reg or 0)} "
+            f"(únicos={len(set(ids))} vs Registros={reg})")
 
-    print("\nFIN sonda iter 3")
+    log("\nFIN sonda iter 4")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        SALIDA.parent.mkdir(parents=True, exist_ok=True)
+        SALIDA.write_text("\n".join(_buf) + "\n", encoding="utf-8")
+        print(f"[resultado escrito en {SALIDA}]", flush=True)
