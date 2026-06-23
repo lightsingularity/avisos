@@ -1,18 +1,31 @@
 """Parser de páginas de detalle (/Detalle/BienesRaices?Aviso=...).
 
-Se usa SOLO para avisos que no traen título/caption en el sitemap. Estrategia
-en cadena: JSON-LD, metaetiquetas, y texto visible. La zona NO se toma de aquí
-(no es fiable desde el texto completo de una página).
+Se usa para avisos sin título/caption en el sitemap y para enriquecer la "cola"
+del índice (avisos solo-id, sin precio). Estrategia en cadena: JSON-LD,
+metaetiquetas y texto visible.
+
+UBICACIÓN (verificado contra fixtures reales): a diferencia del cuerpo libre —del
+que zona/colonia NO son fiables—, la página la expone de forma estructurada:
+  - og:title = "Se {trans} {tipo} en {ZONA}"   -> zona (coincide con ZonMun del sitio)
+  - <title>  = "Se {trans} {tipo} en {COLONIA} | Avisos de Ocasión" -> colonia
+  - respaldo: una etiqueta "Zona: {ZONA} Colonia ..." en la página.
 """
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from bs4 import BeautifulSoup
 
 from .atributos import RX_CHIPS, num as _num
 from .caption_parser import clasificar_titulo, parsear_caption
+
+# "... en X" -> X (corta en " | ..." o al final). El tipo/transacción nunca
+# contienen un " en " suelto, así que el primer " en " separa la ubicación.
+_RX_EN = re.compile(r"\ben\s+(.+?)\s*(?:\||$)", re.I)
+# Etiqueta explícita "Zona: VALLE Colonia ..." (respaldo si falta og:title).
+_RX_ZONA_LBL = re.compile(r"Zona:\s*([^|]+?)\s+Colonia", re.I)
 
 
 def parsear_detalle(html: str) -> dict[str, Any]:
@@ -49,14 +62,20 @@ def parsear_detalle(html: str) -> dict[str, Any]:
                 return tag["content"].strip()
         return None
 
-    titulo = out.pop("_titulo_jsonld", None) or _meta("og:title") or (
-        sopa.title.get_text(strip=True) if sopa.title else None
-    )
+    og_title = _meta("og:title")
+    doc_title = sopa.title.get_text(strip=True) if sopa.title else None
+    titulo = out.pop("_titulo_jsonld", None) or og_title or doc_title
     trans, tipo = clasificar_titulo(titulo)
     if trans:
         out["tipo_transaccion"] = trans
     if tipo:
         out["tipo_inmueble"] = tipo
+
+    # Ubicación estructurada (fiable): zona del og:title, colonia del <title>.
+    if og_title and (m := _RX_EN.search(og_title)):
+        out["zona"] = m.group(1).strip()
+    if doc_title and (m := _RX_EN.search(doc_title)):
+        out.setdefault("colonia", m.group(1).strip())
 
     desc_meta = _meta("og:description", "description")
     if desc_meta and "descripcion" not in out:
@@ -64,10 +83,13 @@ def parsear_detalle(html: str) -> dict[str, Any]:
 
     # --- 3) Texto visible: caption-style + chips ---
     texto = sopa.get_text(" ", strip=True)
+    # Respaldo de zona: la etiqueta explícita "Zona: X" si no la dio el og:title.
+    if "zona" not in out and (m := _RX_ZONA_LBL.search(texto)):
+        out["zona"] = m.group(1).strip()
     campos_texto = parsear_caption(texto)
     for k, v in campos_texto.items():
-        # zona/colonia desde el texto completo de una página no son fiables;
-        # se quedan vacías para los avisos sin caption (mejor que basura).
+        # zona/colonia desde el CUERPO libre no son fiables (las estructuradas de
+        # arriba sí); aquí se ignoran para no meter basura.
         if k in ("zona", "colonia"):
             continue
         out.setdefault(k, v)

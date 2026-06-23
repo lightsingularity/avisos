@@ -23,6 +23,15 @@ indice:
   # (evita dar de baja avisos solo porque su página de categoría falló con 403).
   umbral_cobertura: 0.8
 
+  # Enriquecer la "cola" del índice: avisos solo-id (página 2+) que llegan SIN
+  # precio y con zona del slug (contaminada). Para cada uno se visita su página
+  # de detalle (~1 solicitud c/u) y se le añade precio —los hace visibles en el
+  # tablero— y se corrige zona/colonia desde el og:title (fiable). Valores:
+  #   no     -> no enriquecer (comportamiento anterior)
+  #   venta  -> solo ventas (~440/día, ~7 min extra) [recomendado]
+  #   todos  -> ventas y rentas (~745/día, ~13 min extra)
+  enriquecer_cola: venta
+
 # Descarga de imágenes (ver download_photos.py). Mantener en false salvo que
 # cuentes con autorización por escrito del sitio o asumas conscientemente el
 # riesgo: las fotos son obras protegidas según el Aviso Legal del sitio.
