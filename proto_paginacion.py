@@ -1,22 +1,16 @@
 #!/usr/bin/env python3
-"""Sonda de paginación POST /Portada/PostIndice — hipótesis del CURSOR.
+"""Sonda de paginación POST /Portada/PostIndice — hipótesis de COOKIE de estado.
 
-Contexto: el ciclo 4 (rama proto-paginacion) trataba la paginación como
-'pagina=N' y reusaba el token de la página 1; se estancaba (~44 únicos de 238).
-Pero el menú de búsqueda del sitio pagina SIN fallar, así que el endpoint
-funciona: lo que faltaba era replicar el handshake con estado.
+Iteración 1 (cursor ClavAviso): el POST devuelve JSON correcto pero SIEMPRE la
+página 1; el form `pagina` y `ClavAviso` se ignoran. Pista decisiva: la sesión
+tiene una cookie `Pagina` (y `Sorts`). El sitio guarda el estado de paginación en
+cookies (las pone el JS con document.cookie) y el servidor lee la página de AHÍ.
 
-Pistas nuevas (del fixture de categoría): el form `frmResultadosxTex` trae,
-junto a `pagina`, un campo `ClavAviso` (vacío) — huele a CURSOR (clave del último
-aviso). Si el servidor pagina por cursor, dejar `ClavAviso` vacío devuelve
-siempre el inicio (= el estancamiento observado).
-
-Esta sonda hace dos cosas en UNA corrida (se lee del log de Actions):
-  FASE 1 — vuelca el JS del paginador (btnPaginacion / paginacionDirecta y el
-           contexto de PostIndice/ClavAviso) para ver el payload REAL.
-  FASE 2 — control (pagina sola, estilo ciclo 4) vs. CURSOR (ClavAviso = último
-           K_Av) con token fresco por respuesta y cookies de sesión; mide el
-           crecimiento de avisos únicos.
+Esta iteración:
+  FASE 1 — vuelca el JS correcto (UtilComplementos/UtilConfiguraciones, etc.)
+           buscando cómo se setea la cookie `Pagina` y se llama a PostIndice.
+  FASE 2 — camina las páginas SETEANDO la cookie `Pagina=n` antes de cada POST y
+           verifica que los ids devueltos sean el tramo K_Avisos[(n-1)*23 : n*23].
 """
 import json
 import re
@@ -30,35 +24,10 @@ from scraper.http_polite import BASE, ClienteEducado
 from scraper.indice import descargar_grupos, extraer_busqueda, partes_categoria
 
 POST_URL = f"{BASE}/Portada/PostIndice"
-JS_FILES = ["/js/min/UtilBusqueda.min.js", "/js/min/Portada.min.js", "/js/min/Util.min.js"]
-
-
-# ---------------------------------------------------------------- utilidades
-def _extraer_funcion(js: str, nombre: str) -> str | None:
-    """Extrae el cuerpo completo de una función con balance de llaves."""
-    for pat in (f"function {nombre}", f"{nombre}=function", f"{nombre}:function",
-                f"{nombre}=async function"):
-        i = js.find(pat)
-        if i < 0:
-            continue
-        j = js.find("{", i)
-        if j < 0:
-            continue
-        prof = 0
-        for k in range(j, min(len(js), j + 6000)):
-            if js[k] == "{":
-                prof += 1
-            elif js[k] == "}":
-                prof -= 1
-                if prof == 0:
-                    return js[i:k + 1]
-        return js[i:j + 2500]
-    return None
-
-
-def _contexto(js: str, clave: str, ancho: int = 220) -> str | None:
-    i = js.find(clave)
-    return None if i < 0 else js[max(0, i - ancho):i + ancho]
+JS_FILES = ["/js/min/UtilComplementos.min.js", "/js/min/UtilConfiguraciones.min.js",
+            "/js/min/UtilBusqueda.min.js", "/js/min/Portada.min.js", "/js/min/Util.min.js"]
+CLAVES_JS = ("btnPaginacion", "paginacionDirecta", "PostIndice", "Pagina",
+             "document.cookie", "Cookie")
 
 
 def _form_campos(html: str):
@@ -70,13 +39,23 @@ def _form_campos(html: str):
     return campos, campos.get("__RequestVerificationToken")
 
 
-def _token_de(html: str) -> str | None:
+def _token_de(html: str):
     m = re.search(r'name="__RequestVerificationToken"[^>]*value="([^"]+)"', html)
     return m.group(1) if m else None
 
 
+def _set_pagina(cli, n):
+    """Actualiza (o crea) la cookie de estado `Pagina`."""
+    for c in list(cli.sesion.cookies):
+        if c.name == "Pagina":
+            cli.sesion.cookies.set("Pagina", str(n), domain=c.domain, path=c.path)
+            return f"{c.domain}{c.path}"
+    cli.sesion.cookies.set("Pagina", str(n), domain="www.avisosdeocasion.com", path="/")
+    return "www.avisosdeocasion.com/"
+
+
 def _post(cli, campos, headers):
-    time.sleep(1.0)  # cortesía (1 req/s)
+    time.sleep(1.0)
     r = cli.sesion.post(POST_URL, data=campos, headers=headers, timeout=30)
     if "charset=" not in r.headers.get("Content-Type", "").lower():
         r.encoding = "utf-8"
@@ -89,29 +68,22 @@ def _post(cli, campos, headers):
     return r, d, ids, _token_de(r.text)
 
 
-# ------------------------------------------------------------------ FASE 1
-def _dump_js(cli) -> None:
-    print("\n===== FASE 1: JS del paginador =====")
+def _dump_js(cli):
+    print("\n===== FASE 1: JS del paginador (archivos correctos) =====")
     for ruta in JS_FILES:
         try:
             js = cli.get(BASE + ruta).text
         except Exception as e:
-            print(f"  {ruta}: no se pudo bajar ({e})")
-            continue
-        print(f"\n  --- {ruta} ({len(js)} bytes) ---")
-        for fn in ("btnPaginacion", "paginacionDirecta"):
-            cuerpo = _extraer_funcion(js, fn)
-            if cuerpo:
-                print(f"  · {fn}():\n{cuerpo[:1200]}\n")
-        for clave in ("PostIndice", "ClavAviso"):
-            ctx = _contexto(js, clave)
-            if ctx:
-                print(f"  · ...{clave}...: {ctx}\n")
+            print(f"  {ruta}: no se pudo bajar ({e})"); continue
+        encontrados = {k: js.find(k) for k in CLAVES_JS}
+        encontrados = {k: i for k, i in encontrados.items() if i >= 0}
+        print(f"\n  --- {ruta} ({len(js)} bytes) — claves: {list(encontrados)} ---")
+        for k, i in encontrados.items():
+            if k in ("Pagina", "Cookie", "document.cookie", "PostIndice"):
+                print(f"  · ...{k}...: {js[max(0,i-160):i+160]}")
 
 
-# ------------------------------------------------------------------ FASE 2
 def _elegir_categoria(cli):
-    """Primera categoría con varias páginas (Registros > 100), priorizando casas."""
     urls = descargar_grupos(cli)
     urls.sort(key=lambda u: 0 if "casa" in u.lower() else 1)
     for u in urls[:14]:
@@ -138,13 +110,11 @@ def main():
     ricos1 = [str(o.get("K_Av")) for o in data1.get("Avisos", [])
               if isinstance(o, dict) and o.get("K_Av")]
     reg = data1.get("Registros")
-    mtot = re.search(r"P[áa]g\.\s*\d+\s*de\s*(\d+)", html1)
     base, tok = _form_campos(html1)
-    print(f"Categoría {slug} | Registros={reg} | K_Avisos={len(kav)} | "
-          f"páginas={mtot.group(1) if mtot else '?'} | ricos pág1={len(ricos1)}")
-    print(f"Campos del form: {sorted(base)}")
-    print(f"ClavAviso inicial={base.get('ClavAviso')!r} | token pág1={tok[:20] if tok else None}…")
-    print(f"Cookies de sesión: {sorted(cli.sesion.cookies.keys())}")
+    print(f"Categoría {slug} | Registros={reg} | K_Avisos={len(kav)} | ricos pág1={len(ricos1)}")
+    print(f"K_Avisos[0:3]={kav[:3]} … esperado pág2 = K_Avisos[23:26]={kav[23:26]}")
+    print(f"Cookie Pagina inicial: "
+          f"{[(c.name,c.value,c.domain) for c in cli.sesion.cookies if c.name in ('Pagina','Sorts')]}")
 
     headers = {
         "X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": url_cat,
@@ -152,47 +122,34 @@ def main():
         "Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin",
     }
 
-    # ---- CONTROL: pagina=2 con ClavAviso vacío (reproduce el ciclo 4) ----
-    print("\n----- CONTROL (pagina=2, ClavAviso vacío, estilo ciclo 4) -----")
-    campos = dict(base); campos["pagina"] = "2"; campos["ClavAviso"] = ""
-    r, d, ids, ntok = _post(cli, campos, headers)
-    print(f"  HTTP {r.status_code} | ctype={r.headers.get('Content-Type','')[:40]} | "
-          f"len={len(r.text)} | Avisos={len(ids)} | first={ids[:3]}")
-    if isinstance(d, dict):
-        print(f"  claves top-level de la respuesta: {list(d.keys())[:12]}")
-    else:
-        print(f"  respuesta no-JSON; inicio: {r.text[:160]!r}")
-
-    # ---- CURSOR: ClavAviso = último K_Av, token fresco, secuencial ----
-    print("\n----- CURSOR (ClavAviso = último K_Av, token fresco, secuencial) -----")
+    print("\n----- COOKIE Pagina=n antes de cada POST -----")
     vistos = set(ricos1)
-    cursor = ricos1[-1] if ricos1 else ""
     tok_actual = tok
-    print(f"  página 1 (del GET): {len(ricos1)} ricos | cursor inicial={cursor}")
-    for paso in range(2, 11):
+    for n in range(2, 8):
+        dom = _set_pagina(cli, n)
         campos = dict(base)
-        campos["pagina"] = str(paso)
-        campos["ClavAviso"] = cursor
+        campos["pagina"] = str(n)
         if tok_actual:
             campos["__RequestVerificationToken"] = tok_actual
             headers["RequestVerificationToken"] = tok_actual
         r, d, ids, ntok = _post(cli, campos, headers)
+        esperado = kav[(n - 1) * 23: n * 23]
+        coincide = ids[:len(esperado)] == esperado
         nuevos = len(set(ids) - vistos)
         vistos |= set(ids)
-        print(f"  paso {paso}: HTTP {r.status_code} Avisos={len(ids)} NUEVOS={nuevos} "
-              f"acum={len(vistos)} cursor={cursor} "
-              f"tokRot={'sí' if ntok and ntok != tok_actual else 'no'} first={ids[:2]}")
-        if not ids:
-            print("    (vacío; corto)"); break
-        cursor = ids[-1]
+        setck = r.headers.get("Set-Cookie", "")
+        ckpag = next((c.value for c in cli.sesion.cookies if c.name == "Pagina"), None)
+        print(f"  Pagina={n} (cookie@{dom}): HTTP {r.status_code} Avisos={len(ids)} "
+              f"NUEVOS={nuevos} acum={len(vistos)} ¿=K_Avisos[{(n-1)*23}:{n*23}]? {coincide} "
+              f"first={ids[:2]} cookiePagPost={ckpag} setCk={'Pagina' in setck}")
         if ntok:
             tok_actual = ntok
-        if nuevos == 0:
-            print("    (sin nuevos; el cursor no avanzó)"); break
+        if not ids:
+            print("    (vacío; corto)"); break
 
-    print(f"\nÚnicos acumulados (cursor): {len(vistos)} de Registros={reg}")
-    print("VEREDICTO:", "✅ AVANZA (cursor funciona)" if len(vistos) > 80
-          else "❌ aún no avanza — revisar el JS volcado arriba")
+    print(f"\nÚnicos acumulados: {len(vistos)} de Registros={reg}")
+    print("VEREDICTO:", "✅ AVANZA (cookie Pagina funciona)" if len(vistos) > 80
+          else "❌ no avanza — ver JS y Set-Cookie arriba")
 
 
 if __name__ == "__main__":
