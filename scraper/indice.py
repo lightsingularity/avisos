@@ -191,19 +191,22 @@ def _registro_base(idv: str, trans, tipo, zona) -> dict:
 def _registro_rico(obj: dict, trans, tipo, zona, clasif: "Clasificacion | None" = None) -> dict:
     """Mapea un objeto de `Avisos` a un registro con columnas de db.py.
 
-    El tipo/transacción del SLUG de la categoría no es fiable: las páginas mezclan
-    avisos de otras categorías (p. ej. una página "venta-terreno-VALLE" lista en su
-    primera página casas de VALLE con terreno grande). El objeto trae su PROPIA
-    clasificación: K_Cla3 = tipo de inmueble, K_Cla2 = transacción. Si tenemos el
-    mapa código→etiqueta (aprendido del catálogo completo), tipamos por el código
-    del aviso; si no, caemos al slug.
+    NADA del SLUG de la categoría es fiable: las páginas mezclan avisos de otras
+    categorías (p. ej. una página "venta-terreno-VALLE" lista en su primera página
+    casas de VALLE con terreno grande, y una página "...-CENTRO" lista avisos cuya
+    zona real es VALLE). El objeto trae sus PROPIOS datos:
+      - K_Cla3 = tipo de inmueble, K_Cla2 = transacción. Si tenemos el mapa
+        código→etiqueta (aprendido del catálogo completo), tipamos por el código
+        del aviso; si no, caemos al slug.
+      - ZonMun = su zona real. Se usa esa; el slug solo respalda si ZonMun falta.
     """
     idv = str(obj["K_Av"])
     if clasif is not None:
         tipo = clasif.tipo.get(obj.get("K_Cla3"), tipo)
         trans = clasif.trans.get(obj.get("K_Cla2"), trans)
-    # La zona del slug es la canónica de la categoría; si faltara, ZonMun.
-    z = zona or (str(obj.get("ZonMun") or "").strip() or None)
+    # La zona del propio aviso (ZonMun) es la fiable; el slug está contaminado con
+    # cross-listings de otras zonas, así que solo respalda cuando ZonMun falta.
+    z = (str(obj.get("ZonMun") or "").strip() or None) or zona
     rec = _registro_base(idv, trans, tipo, z)
 
     col = str(obj.get("Col") or "").strip()
