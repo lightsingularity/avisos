@@ -143,4 +143,6 @@ def calibrar_indice(cliente) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # TEMPORAL (sonda): probar el handshake de paginación POST en vez de calibrar.
+    import proto_paginacion
+    proto_paginacion.main()
