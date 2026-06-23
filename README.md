@@ -57,8 +57,6 @@ Decisiones de diseño importantes:
   entre los avisos cuyas categorías se descargaron completas esa corrida; si
   falla demasiado (cobertura por debajo de `indice.umbral_cobertura`), la corrida
   omite por completo la detección de bajas en lugar de inventarlas.
-- **Privacidad**: teléfonos y correos de los anunciantes se eliminan del texto
-  antes de guardar (`scraper/scrub.py`). Tu análisis no los necesita.
 - **Fotos**: solo se guardan las URLs. La descarga de imágenes existe
   (`download_photos.py`) pero está desactivada por defecto — lee el comentario
   en `config.yaml` antes de activarla.
