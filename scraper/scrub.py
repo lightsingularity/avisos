@@ -1,7 +1,4 @@
 """Eliminación de datos de contacto (teléfonos y correos) de textos de anuncios.
-
-Tu investigación de mercado no necesita datos personales de los anunciantes,
-y la ley mexicana de protección de datos prefiere que no los guardes.
 """
 from __future__ import annotations
 
