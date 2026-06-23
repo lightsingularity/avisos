@@ -40,6 +40,12 @@ UMBRAL_CAIDA = 0.5        # aborta si hoy vemos < 50 % de lo de ayer
 MIN_PREVIO_GUARDA = 20    # la guarda aplica solo con historial suficiente
 UMBRAL_COBERTURA = 0.8    # mín. de categorías OK para confiar en el catálogo
 
+# Atributos que el detalle puede aportar a un aviso de la "cola" (solo rellenan;
+# nunca pisan lo que ya trae el registro del índice).
+_ATRIB_DETALLE = ("recamaras", "banos", "plantas", "m2_construccion",
+                  "m2_terreno", "m2_oficina", "m2_bodega", "metros_frente",
+                  "hectareas", "mas_iva")
+
 
 def _datos_indice(rec: dict) -> dict:
     """Copia del registro del índice apta para el evento 'alta' (sin id_aviso)."""
@@ -106,7 +112,11 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     eventos: list[dict] = []
     errores = 0
     modo_detalle = cfg.get("detalle", "faltantes")  # nunca | faltantes | todos
-    n_altas = n_bajas = n_cambios = 0
+    # Enriquecer la "cola" del índice (avisos solo-id, sin precio) visitando su
+    # página de detalle: añade precio (los hace visibles) y corrige zona/colonia
+    # (el slug de la categoría miente). no | venta | todos.
+    modo_cola = str(icfg.get("enriquecer_cola", "no")).lower()
+    n_altas = n_bajas = n_cambios = n_cola = 0
     procesados: set[str] = set()
 
     # ---------------- altas / cambios desde el sitemap ----------------
@@ -172,6 +182,28 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
 
         if es_nuevo or reaparece:
             datos = _datos_indice(rec)  # tipo, zona, colonia, precio, atributos, categoría
+            # Cola sin precio: visitar el detalle la hace visible (precio) y corrige
+            # zona/colonia (el slug de la categoría está contaminado; el detalle no).
+            quiere_cola = modo_cola != "no" and "precio" not in datos and (
+                modo_cola == "todos" or datos.get("tipo_transaccion") == "venta")
+            if quiere_cola:
+                try:
+                    extra = parsear_detalle(cliente.get(datos["url"]).text)
+                    if "precio" in extra:
+                        datos["precio"] = extra["precio"]
+                        datos["precio_unidad"] = extra.get("precio_unidad", "total")
+                    if extra.get("zona"):       # el slug miente; el og:title no
+                        datos["zona"] = extra["zona"]
+                    if extra.get("colonia"):
+                        datos.setdefault("colonia", extra["colonia"])
+                    for k in _ATRIB_DETALLE:
+                        if k in extra:
+                            datos.setdefault(k, extra[k])
+                    if "precio" in datos:
+                        n_cola += 1
+                except Exception as exc:  # un detalle fallido no tumba la corrida
+                    errores += 1
+                    print(f"    [aviso {idv}] enriquecimiento de cola falló: {exc}")
             if reaparece:
                 eventos.append({"e": "realta", "f": hoy, "id": idv})
             eventos.append({"e": "alta", "f": hoy, "id": idv,
@@ -225,8 +257,8 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     })
     anexar_eventos(eventos)
     print(f"  Resultado: +{n_altas} altas, −{n_bajas} bajas, "
-          f"~{n_cambios} cambios de precio, {errores} errores, "
-          f"{int(time.monotonic() - inicio)} s")
+          f"~{n_cambios} cambios de precio, {n_cola} de cola enriquecidos, "
+          f"{errores} errores, {int(time.monotonic() - inicio)} s")
     return 0
 
 
