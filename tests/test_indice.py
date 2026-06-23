@@ -97,6 +97,9 @@ def test_parsear_avisos_campos_y_id_canonico():
     assert len(avisos) == len(data["Avisos"]) > 0
     trans, tipo, zona = partes_slug(SLUG)
     ids = {str(x) for x in data["K_Avisos"]}
+    # Zona REAL de cada aviso (ZonMun); el slug solo respalda si viene vacía.
+    zonmun = {str(o["K_Av"]): (str(o.get("ZonMun") or "").strip() or None)
+              for o in data["Avisos"]}
     for a in avisos:
         assert a["id_aviso"] in ids
         # URL CANÓNICA (BienesRaices), no el PostBienesRaices de la tarjeta visible.
@@ -104,8 +107,9 @@ def test_parsear_avisos_campos_y_id_canonico():
             f"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso={a['id_aviso']}")
         assert a.get("tipo_transaccion") == trans     # del slug
         assert a.get("tipo_inmueble") == tipo         # del slug
-        if zona is not None:
-            assert a.get("zona") == zona              # del slug
+        # La zona sale del PROPIO aviso (ZonMun), no del slug de la categoría
+        # (las páginas mezclan avisos de otras zonas).
+        assert a.get("zona") == (zonmun[a["id_aviso"]] or zona)
     # calibrate.py garantiza que el 1er aviso rico trae id, transacción y precio.
     a0 = avisos[0]
     assert isinstance(a0["precio"], int) and a0["precio"] > 0
@@ -377,6 +381,41 @@ def test_cosecha_tipa_por_codigo_no_por_slug():
     malos = [i for i, r in res.registros.items()
              if r.get("m2_construccion") and r.get("tipo_inmueble") == "terreno"]
     assert malos == []
+
+
+def test_cosecha_zona_por_aviso_no_por_slug():
+    # Misma contaminación que el tipo, pero en la ZONA: una página de VALLE lista
+    # avisos cuya zona real es SANTA CATARINA / CARRETERA NACIONAL, etc. La zona
+    # debe salir del propio aviso (ZonMun), no del slug de la categoría.
+    if not _tiene_fixtures():
+        return
+    base = "https://www.avisosdeocasion.com/Portada/Indice"
+    urls = {f"{base}/{s}/{i}": _fix(s) for i, s in enumerate(_SLUGS_FIX, start=1)}
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           + "".join(f"<url><loc>{u}</loc></url>" for u in urls) + "</urlset>")
+    from scraper.indice import URL_GRUPOS
+    res = cosechar_indice(ClienteFixture({URL_GRUPOS: xml, **urls}))
+
+    # Zona REAL (ZonMun) de cada aviso rico, tomada directo de los fixtures.
+    zonmun = {}
+    for s in _SLUGS_FIX:
+        for o in extraer_busqueda(_fix(s)).get("Avisos", []):
+            zm = str(o.get("ZonMun") or "").strip()
+            if zm:
+                zonmun[str(o["K_Av"])] = zm
+
+    # Invariante: todo aviso rico quedó con SU zona (ZonMun), no la del slug.
+    for idv, zm in zonmun.items():
+        assert res.registros[idv]["zona"] == zm
+
+    # Y la corrección no es vacía: hay al menos un aviso cuya zona real difiere
+    # de la zona del slug de la categoría en la que quedó registrado (cross-list).
+    corregidos = [
+        idv for idv, zm in zonmun.items()
+        if (partes_slug(res.registros[idv]["categoria"])[2] or "").upper() != zm.upper()
+    ]
+    assert corregidos, "se esperaba al menos un aviso con zona distinta a la del slug"
 
 
 def test_grupos_sitemap_filtra_indice():
