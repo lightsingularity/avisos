@@ -12,7 +12,20 @@ from .events import leer_eventos
 
 RUTA_DB = Path(__file__).resolve().parent.parent / "data" / "avisos.db"
 
-_ESQUEMA = """
+# Clasificación del tipo de inmueble para las métricas por m². Fuente ÚNICA de
+# verdad: la comparten la vista `analisis` (métricas por fila, abajo) y
+# analytics.serie_mensual (agregaciones). El $/m² de construcción solo tiene
+# sentido en inmuebles construidos; el $/m² de terreno, solo en los de suelo.
+TIPOS_CONSTRUCCION = frozenset({"casa", "departamento", "local_oficina", "edificio"})
+TIPOS_TERRENO = frozenset({"terreno", "finca_campestre", "rancho"})
+
+
+def _sql_lista(valores) -> str:
+    """{'a', 'b'} -> "'a', 'b'" para una cláusula IN de SQLite."""
+    return ", ".join(f"'{v}'" for v in sorted(valores))
+
+
+_ESQUEMA = f"""
 CREATE TABLE avisos (
     id_aviso            TEXT PRIMARY KEY,
     url                 TEXT,
@@ -69,10 +82,13 @@ SELECT a.*,
        CAST(julianday(COALESCE(a.fecha_baja, date('now')))
             - julianday(a.fecha_primera_vista) AS INTEGER) AS dias_en_mercado,
        CASE WHEN h.unidad = 'total' AND a.m2_construccion > 0
+                 AND a.tipo_inmueble IN ({_sql_lista(TIPOS_CONSTRUCCION)})
             THEN ROUND(h.precio / a.m2_construccion, 0) END AS precio_m2_construccion,
-       CASE WHEN h.unidad = 'total' AND a.m2_terreno > 0
-            THEN ROUND(h.precio / a.m2_terreno, 0)
-            WHEN h.unidad = 'm2' THEN h.precio END           AS precio_m2_terreno,
+       CASE WHEN a.tipo_inmueble IN ({_sql_lista(TIPOS_TERRENO)}) THEN
+                 CASE WHEN h.unidad = 'total' AND a.m2_terreno > 0
+                      THEN ROUND(h.precio / a.m2_terreno, 0)
+                      WHEN h.unidad = 'm2' THEN h.precio END
+            END                                              AS precio_m2_terreno,
        (SELECT COUNT(*) - 1 FROM historial_precios h2
          WHERE h2.id_aviso = a.id_aviso)                     AS num_cambios_precio
 FROM avisos a
