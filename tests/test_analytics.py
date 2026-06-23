@@ -117,6 +117,30 @@ def test_cambios_precio(con):
     assert camb["mediana_baja_mxn"] == pytest.approx(-600_000)
 
 
+def test_precio_m2_respeta_tipo_inmueble(tmp_path):
+    """El $/m² por fila respeta el tipo: terreno -> $/m² terreno; construcción ->
+    $/m² construcción. Un departamento con m2_terreno NO debe producir $/m² de
+    terreno (métrica sin sentido que aparecía en el tablero)."""
+    eventos = [
+        _alta("2026-06-01", "D1", tipo_transaccion="venta",
+              tipo_inmueble="departamento", zona="VALLE",
+              m2_construccion=100, m2_terreno=485, precio=8_000_000,
+              precio_unidad="total"),
+        _alta("2026-06-01", "T1", tipo_transaccion="venta",
+              tipo_inmueble="terreno", zona="APODACA",
+              m2_terreno=500, precio=10_000_000, precio_unidad="total"),
+    ]
+    d = _escribir_eventos(tmp_path, eventos)
+    con = reconstruir(tmp_path / "db.sqlite", dir_eventos=d)
+    df = an.cargar_analisis(con).set_index("id_aviso")
+    # Departamento: $/m² construcción sí; $/m² terreno NO (aunque tenga m2_terreno).
+    assert df.loc["D1", "precio_m2_construccion"] == 80_000
+    assert pd.isna(df.loc["D1", "precio_m2_terreno"])
+    # Terreno: $/m² terreno sí; $/m² construcción NO.
+    assert df.loc["T1", "precio_m2_terreno"] == 20_000
+    assert pd.isna(df.loc["T1", "precio_m2_construccion"])
+
+
 def test_comparar_zonas(con):
     df = an.cargar_analisis(con)
     tabla = an.comparar(df, "zona", "CUMBRES", "VALLE")

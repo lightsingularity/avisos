@@ -16,8 +16,8 @@ import sqlite3
 import pandas as pd
 
 # Tipos donde "precio por m²" se entiende sobre construcción vs. sobre terreno.
-TIPOS_CONSTRUCCION = {"casa", "departamento", "local_oficina", "edificio"}
-TIPOS_TERRENO = {"terreno", "finca_campestre", "rancho"}
+# Definición única en scraper.db (la usa también la vista `analisis`).
+from scraper.db import TIPOS_CONSTRUCCION, TIPOS_TERRENO
 
 
 # ----------------------------- carga -----------------------------------
