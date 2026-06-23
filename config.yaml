@@ -28,9 +28,9 @@ indice:
   # de detalle (~1 solicitud c/u) y se le añade precio —los hace visibles en el
   # tablero— y se corrige zona/colonia desde el og:title (fiable). Valores:
   #   no     -> no enriquecer (comportamiento anterior)
-  #   venta  -> solo ventas (~440/día, ~7 min extra) [recomendado]
-  #   todos  -> ventas y rentas (~745/día, ~13 min extra)
-  enriquecer_cola: venta
+  #   venta  -> solo ventas (~440/día, ~7 min extra)
+  #   todos  -> ventas y rentas (~888/día, ~15 min extra) [cobertura ~100% MXN]
+  enriquecer_cola: todos
 
 # Descarga de imágenes (ver download_photos.py). Mantener en false salvo que
 # cuentes con autorización por escrito del sitio o asumas conscientemente el
