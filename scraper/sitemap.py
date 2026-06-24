@@ -43,9 +43,32 @@ class EntradaSitemap:
         return bool(self.titulo or self.caption)
 
 
+_RX_XML_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_RX_XML_AMP = re.compile(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9A-Fa-f]+);)")
+
+
+def _raiz_xml(texto: str):
+    """Parsea XML tolerando defectos comunes del sitio: '&' sin escapar en texto
+    libre (t\u00edtulos/captions) y caracteres de control inv\u00e1lidos. Intenta el modo
+    estricto primero y solo sanea si hace falta; si aun as\u00ed falla, incluye la
+    l\u00ednea ofensora en el error para poder diagnosticar."""
+    limpio = texto.lstrip("\ufeff")
+    try:
+        return ET.fromstring(limpio)
+    except ET.ParseError as e:
+        saneado = _RX_XML_AMP.sub("&amp;", _RX_XML_CTRL.sub("", limpio))
+        try:
+            return ET.fromstring(saneado)
+        except ET.ParseError:
+            fila = (getattr(e, "position", (0, 0)) or (0, 0))[0]
+            lineas = limpio.splitlines()
+            ctx = lineas[fila - 1] if 0 < fila <= len(lineas) else ""
+            raise ET.ParseError(f"{e}; l\u00ednea {fila}: {ctx[:160]!r}") from e
+
+
 def parsear_sitemap(xml_texto: str) -> list[EntradaSitemap]:
     """Convierte el XML del sitemap en una lista de EntradaSitemap."""
-    raiz = ET.fromstring(xml_texto.lstrip("\ufeff"))
+    raiz = _raiz_xml(xml_texto)
     entradas: list[EntradaSitemap] = []
     for nodo in raiz.findall("sm:url", NS):
         loc = nodo.findtext("sm:loc", default="", namespaces=NS).strip()

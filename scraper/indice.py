@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 
 from .caption_parser import _TIPOS
 from .http_polite import BASE
+from .sitemap import _raiz_xml
 
 URL_GRUPOS = "https://www.avisosdeocasion.com/sitemap_grupos_bienesraices.xml"
 _NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
@@ -60,7 +61,7 @@ _RX_JSON_VAL = re.compile(r'value="(\{[^"]*\})"', re.S)
 
 # --------------------------- sitemap de grupos ---------------------------
 def _parsear_grupos(xml_texto: str) -> list[str]:
-    raiz = ET.fromstring(xml_texto.lstrip("﻿"))
+    raiz = _raiz_xml(xml_texto)
     urls: list[str] = []
     for nodo in raiz.findall("sm:url", _NS):
         loc = nodo.findtext("sm:loc", default="", namespaces=_NS).strip()

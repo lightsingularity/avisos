@@ -26,6 +26,23 @@ def test_sitemap_parsea_entradas():
     assert depto.url.endswith("Aviso=32363879")
 
 
+def test_sitemap_tolera_ampersand_sin_escapar():
+    # El sitio a veces publica '&' sin escapar en el texto libre del caption, lo
+    # que rompe el parser XML estricto. El parser tolerante debe recuperarse.
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+           'xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">'
+           '<url><loc>https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=1</loc>'
+           '<image:image><image:loc>http://x/f.jpg</image:loc>'
+           '<image:title>Se vende casa en CUMBRES</image:title>'
+           '<image:caption>Jardín & alberca, trato directo</image:caption>'
+           '</image:image></url></urlset>')
+    entradas = parsear_sitemap(xml)
+    assert len(entradas) == 1
+    assert entradas[0].id_aviso == "1"
+    assert entradas[0].caption and "alberca" in entradas[0].caption
+
+
 # ------------------------- caption parser ------------------------------
 def test_caption_departamento_completo():
     e = {x.id_aviso: x for x in parsear_sitemap(FIXTURE)}["32363879"]
