@@ -1,40 +1,46 @@
 #!/usr/bin/env python3
-"""Sonda iter 4 — escribe el resultado a un archivo versionado (no solo al log).
+"""Sonda iter 5 — robusta: no depende del sitemap de grupos y SIEMPRE escribe el
+resultado a tests/fixtures/_paginacion_resultado.txt (sale 0 aunque truene, para
+que calibrate.yml lo commitee y se lea por git).
 
-calibrate.yml hace `git add tests/fixtures` y commitea si hay cambios; por eso el
-resultado se vuelca a tests/fixtures/_paginacion_resultado.txt y se puede leer con
-`git fetch` (sin depender de leer el log de Actions, que ha estado intermitente).
-
-Mecanismo ya confirmado: /Portada/PostIndice IGNORA `pagina`, `ClavAviso` y la
-cookie `Pagina`; el servidor re-corre la búsqueda según `jsonBusqueda`
-(trae `maxRegs`, `firstRegs`). Pruebas decisivas:
-  A) mandar `json.K_Avisos` = un tramo de ids -> ¿hidrata ese tramo?
-  B) subir `firstRegs`/`maxRegs` en `jsonBusqueda` -> ¿devuelve un lote grande
-     (idealmente TODA la categoría) en un solo POST?
+Mecanismo confirmado: /Portada/PostIndice IGNORA `pagina`, `ClavAviso` y la cookie
+`Pagina`; el servidor re-corre la búsqueda según `jsonBusqueda` (trae `maxRegs`/
+`firstRegs`). Pruebas:
+  A) `json.K_Avisos` = tramo de ids -> ¿hidrata ese tramo?
+  B) subir `firstRegs`/`maxRegs` -> ¿devuelve un lote grande (toda la categoría)?
 """
 import json
 import time
+import traceback
 from pathlib import Path
 
 import yaml
 from bs4 import BeautifulSoup
 
 from scraper.http_polite import BASE, ClienteEducado
-from scraper.indice import descargar_grupos, extraer_busqueda, partes_categoria
+from scraper.indice import extraer_busqueda, partes_categoria
 
 POST_URL = f"{BASE}/Portada/PostIndice"
 SALIDA = Path("tests/fixtures/_paginacion_resultado.txt")
+# venta-casa = tipo 966501 en toda zona (CLAUDE.md); categorías grandes y estables.
+CANDIDATAS = [
+    f"{BASE}/Portada/Indice/venta-casa-CARRETERA-NACIONAL/966501",
+    f"{BASE}/Portada/Indice/venta-casa-MONTERREY/966501",
+    f"{BASE}/Portada/Indice/venta-casa-GARCIA/966501",
+]
 _buf: list[str] = []
 
 
 def log(*a):
-    linea = " ".join(str(x) for x in a)
-    print(linea, flush=True)
-    _buf.append(linea)
+    s = " ".join(str(x) for x in a)
+    print(s, flush=True)
+    _buf.append(s)
 
 
 def _form_campos(html):
     f = BeautifulSoup(html, "html.parser").find("form", id="frmResultadosxTex")
+    if not f:
+        return {}, None
     campos = {i.get("name"): (i.get("value") or "")
               for i in f.find_all("input") if i.get("name")}
     return campos, campos.get("__RequestVerificationToken")
@@ -55,13 +61,15 @@ def _post(cli, campos, headers):
 
 
 def _elegir_categoria(cli):
-    urls = descargar_grupos(cli)
-    urls.sort(key=lambda u: 0 if "casa" in u.lower() else 1)
-    for u in urls[:14]:
-        h = cli.get(u).text
-        d = extraer_busqueda(h)
-        if d and d.get("Registros", 0) > 100:
-            return u, h, d
+    for u in CANDIDATAS:
+        try:
+            h = cli.get(u).text
+            d = extraer_busqueda(h)
+            if d and d.get("Registros", 0) > 100:
+                return u, h, d
+            log(f"  cat {u}: Registros={d.get('Registros') if d else None}")
+        except Exception as e:
+            log(f"  cat {u} falló: {e}")
     return None, None, None
 
 
@@ -92,14 +100,16 @@ def main():
     }
 
     def prueba(nombre, campos, esperado=None):
-        _, ids = _post(cli, campos, headers)
+        try:
+            _, ids = _post(cli, campos, headers)
+        except Exception as e:
+            log(f"  [{nombre}] EXCEPCIÓN: {e}"); return []
         ok = (ids[:len(esperado)] == esperado) if esperado else None
-        unicos = len(set(ids))
-        log(f"  [{nombre}] Avisos={len(ids)} únicos={unicos} first={ids[:2]} "
-            f"last={ids[-1:]} ¿prefijo? {ok}")
+        log(f"  [{nombre}] Avisos={len(ids)} únicos={len(set(ids))} first={ids[:2]} "
+            f"last={ids[-1:]} ¿prefijo esperado? {ok}")
         return ids
 
-    log("\n== TEST A: json.K_Avisos = tramo de ids ==")
+    log("\n== TEST A: json.K_Avisos = tramo de ids que ya tengo ==")
     jjA = dict(jj); jjA["K_Avisos"] = [int(x) for x in kav[23:46]]
     cA = dict(base); cA["json"] = json.dumps(jjA, ensure_ascii=False)
     prueba("A1 ids[23:46]", cA, kav[23:46])
@@ -119,13 +129,16 @@ def main():
         log(f"     ¿cubre toda la categoría? {len(set(ids)) >= (reg or 0)} "
             f"(únicos={len(set(ids))} vs Registros={reg})")
 
-    log("\nFIN sonda iter 4")
+    log("\nFIN sonda iter 5")
 
 
 if __name__ == "__main__":
     try:
         main()
+    except Exception:
+        log("EXCEPCIÓN no atrapada:\n" + traceback.format_exc())
     finally:
         SALIDA.parent.mkdir(parents=True, exist_ok=True)
         SALIDA.write_text("\n".join(_buf) + "\n", encoding="utf-8")
         print(f"[resultado escrito en {SALIDA}]", flush=True)
+    # salir 0 SIEMPRE para que el paso de commit suba el archivo de resultado.
