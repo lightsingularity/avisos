@@ -428,3 +428,56 @@ def test_grupos_sitemap_filtra_indice():
     urls = _parsear_grupos(xml)
     assert len(urls) == 2
     assert all("/Portada/Indice/" in u for u in urls)
+
+
+# ----------- precedencia del tipo: código del índice y detalle ganan ----------
+def test_codigo_del_indice_manda_sobre_titulo_del_sitemap(monkeypatch, tmp_path):
+    # El título del sitemap dice 'departamento' (el tipo está en el nombre de la
+    # colonia), pero el índice trae el tipo por CÓDIGO (K_Cla3) = casa, marcado
+    # fiable. El código estructurado debe ganar sobre el título heurístico.
+    entradas = [_entrada("32366810", "Se vende departamento en CUMBRES",
+                         "CUMBRES - LOS DEPARTAMENTOS 3 Recámaras $6,690,000 trato directo")]
+    idx = _indice([_rec("32366810", precio=6_690_000, precio_unidad="total",
+                        _tipo_fiable=True, _trans_fiable=True)])
+    assert _correr(monkeypatch, tmp_path, entradas, idx, "2026-06-20") == 0
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    tipo = con.execute("SELECT tipo_inmueble FROM avisos WHERE id_aviso='32366810'").fetchone()[0]
+    assert tipo == "casa"   # el código del índice pisó el 'departamento' del título
+
+
+def test_cola_adopta_tipo_del_detalle_sobre_slug(monkeypatch, tmp_path):
+    # Aviso de COLA (solo-id, tipado por el SLUG 'terreno', sin precio). El detalle
+    # dice 'casa' (og:title). Con enriquecer_cola, el tipo del detalle debe ganar
+    # sobre el del slug contaminado.
+    DET = ('<html><head>'
+           '<meta property="og:title" content="Se vende casa en GUADALUPE">'
+           '<title>Se vende casa en LINDA COLONIA | Avisos de Ocasión</title>'
+           '<script type="application/ld+json">'
+           '{"@type":"Product","offers":{"price":"4500000"}}</script>'
+           '</head><body></body></html>')
+    url = "https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32399999"
+    rec = {"id_aviso": "32399999", "url": url, "categoria": "venta-terreno-VALLE",
+           "tipo_transaccion": "venta", "tipo_inmueble": "terreno", "zona": "VALLE"}
+    idx = ResultadoIndice(registros={"32399999": rec},
+                          categorias_ok={"venta-terreno-VALLE"},
+                          categorias_total=1, paginas_ok=1, paginas_total=1)
+    dummy = _entrada("32300000", "Se vende casa en CUMBRES", "CUMBRES - X $1,000,000")
+
+    class Cli:
+        def cargar_robots(self):
+            pass
+
+        def get(self, u):
+            return SimpleNamespace(text=DET, raise_for_status=lambda: None)
+
+    monkeypatch.setattr(evmod, "DIR_EVENTOS", tmp_path / "eventos")
+    monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: Cli())
+    monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: [dummy])
+    monkeypatch.setattr(runmod, "cosechar_indice", lambda c, cfg=None: idx)
+    cfg = {"usar_indice": True, "detalle": "nunca", "indice": {"enriquecer_cola": "todos"}}
+    assert runmod.correr(cfg, fecha="2026-06-20") == 0
+
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    fila = con.execute("SELECT tipo_inmueble, precio_actual FROM analisis "
+                       "WHERE id_aviso='32399999'").fetchone()
+    assert fila == ("casa", 4_500_000)   # el detalle pisó el 'terreno' del slug

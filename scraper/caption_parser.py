@@ -22,10 +22,43 @@ _TIPOS = [
 ]
 
 
+# Título canónico del sitio: "Se {vende|renta|traspasa} {TIPO} en {ZONA}" o
+# "{Venta|Renta|Traspaso} de {TIPO} en {ZONA}". El TIPO va en una posición FIJA,
+# así que se lee de ahí y NO por subcadena suelta: un tipo metido en el nombre de
+# la colonia/zona (p. ej. "...casa en LOS DEPARTAMENTOS", "...en TORRE...") ya no
+# voltea la clasificación.
+_RX_TITULO = re.compile(
+    r"^\s*(?:se\s+(vende|renta|traspasa)|(venta|renta|traspaso)\s+de)\s+"
+    r"(.+?)\s+en\s+\S",
+    re.I,
+)
+_TRANS_PALABRA = {"vende": "venta", "venta": "venta", "renta": "renta",
+                  "traspasa": "traspaso", "traspaso": "traspaso"}
+
+
+def _tipo_de_frase(frase: str) -> str | None:
+    """La frase de tipo del título ('casa', 'bodegas y naves…') -> etiqueta."""
+    for rx, valor in _TIPOS:
+        if rx.search(frase):
+            return valor
+    return None
+
+
 def clasificar_titulo(titulo: str | None) -> tuple[str | None, str | None]:
-    """Devuelve (tipo_transaccion, tipo_inmueble) a partir del título del sitemap."""
+    """Devuelve (tipo_transaccion, tipo_inmueble) a partir del título.
+
+    Lee el tipo de su posición canónica ("Se vende {TIPO} en …"); si el título no
+    sigue ese formato, cae a la búsqueda por subcadena (mejor esfuerzo).
+    """
     if not titulo:
         return None, None
+    m = _RX_TITULO.match(titulo)
+    if m:
+        trans = _TRANS_PALABRA.get((m.group(1) or m.group(2) or "").lower())
+        tipo = _tipo_de_frase(m.group(3))
+        if trans or tipo:
+            return trans, tipo
+    # Respaldo: título no canónico -> subcadena (como antes).
     trans = next((v for rx, v in _TRANSACCIONES if rx.search(titulo)), None)
     tipo = next((v for rx, v in _TIPOS if rx.search(titulo)), None)
     return trans, tipo
