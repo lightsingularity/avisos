@@ -70,7 +70,14 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     cliente.cargar_robots()
 
     # ---------------- fuente 1: sitemap (novedades) ----------------
-    entradas = descargar_sitemap(cliente)
+    try:
+        entradas = descargar_sitemap(cliente)
+    except Exception as exc:
+        # Si el sitio sirve HTML/redirección (o XML corrupto) en vez del sitemap,
+        # abortamos con un mensaje claro en vez de un crash; no se registra nada.
+        print(f"  ¡ABORTO! No se pudo leer el sitemap ({exc}). "
+              f"¿El sitio devolvió HTML/redirección en vez de XML?")
+        return 2
     ids_sitemap = {e.id_aviso for e in entradas}
     print(f"  Sitemap de hoy: {len(entradas)} avisos")
 
