@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Sonda iter 7 — `firstRegs` como OFFSET + volcado completo de btnPaginacion.
+"""Sonda iter 8 — DEFINITIVA: caminar firstRegs y medir cobertura de la categoría.
 
-Confirmado: PostIndice ignora pagina/ClavAviso/cookie/json.K_Avisos; devuelve 23
-por llamada, distintos según el input. El form de página 1 ya trae firstRegs:23,
-lo que sugiere que firstRegs es el ÍNDICE INICIAL (offset) de la página. Iter 5
-falló porque cambié firstRegs Y maxRegs a la vez. Aquí se varía SOLO firstRegs y
-se compara el CONJUNTO devuelto contra kav[off:off+23].
+iter 7 mostró que variar SOLO firstRegs devuelve páginas distintas (es el offset);
+el bajo solape con kav[off:off+23] es porque el server ordena distinto al array
+K_Avisos. Lo único que importa para cosechar es que la UNIÓN cubra la categoría.
+Aquí se camina firstRegs = 0,23,46,... hasta Registros y se compara la unión de
+ids recibidos contra el conjunto K_Avisos (autoridad de la página 1).
 """
 import json
 import time
@@ -28,22 +28,6 @@ _buf: list[str] = []
 
 def log(*a):
     s = " ".join(str(x) for x in a); print(s, flush=True); _buf.append(s)
-
-
-def _func_completa(js, nombre):
-    for pat in (f"function {nombre}", f"{nombre}=function", f"{nombre}:function"):
-        i = js.find(pat)
-        if i < 0:
-            continue
-        j = js.find("{", i); prof = 0
-        for k in range(j, min(len(js), j + 4000)):
-            if js[k] == "{":
-                prof += 1
-            elif js[k] == "}":
-                prof -= 1
-                if prof == 0:
-                    return js[i:k + 1]
-    return None
 
 
 def _form_campos(html):
@@ -83,29 +67,15 @@ def main():
     cfg = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
     cli = ClienteEducado(contacto=cfg.get("contacto", "proto"), seg_entre_solicitudes=1.0)
     cli.cargar_robots()
-
-    # --- volcado COMPLETO de btnPaginacion ---
-    js = cli.get(BASE + "/js/min/UtilComplementos.min.js").text
-    cuerpo = _func_completa(js, "btnPaginacion")
-    log("== btnPaginacion (completo) ==")
-    log(cuerpo or "no encontrado")
-    # ¿a qué función llama al final? (la que hace el POST)
-    for fn in ("ResultadoBusquedaTexto", "BusquedaxTexto", "ResultadosxTexto",
-               "PostResultados", "CargarResultados", "Paginar"):
-        c = _func_completa(js, fn)
-        if c:
-            log(f"\n== {fn} ==\n{c[:700]}")
-
-    log("\n== categoría ==")
     url_cat, html1, data1 = _categoria(cli)
     if not url_cat:
         log("sin categoría"); return
     slug, _ = partes_categoria(url_cat)
-    kav = [str(x) for x in data1.get("K_Avisos", [])]
-    reg = data1.get("Registros")
+    kav = set(str(x) for x in data1.get("K_Avisos", []))
+    reg = data1.get("Registros") or len(kav)
     base, tok = _form_campos(html1)
     jb = json.loads(base["jsonBusqueda"])
-    log(f"{slug} | Registros={reg} | K_Avisos={len(kav)} | firstRegs_inicial={jb.get('firstRegs')}")
+    log(f"{slug} | Registros={reg} | K_Avisos={len(kav)}")
 
     headers = {
         "X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": url_cat,
@@ -113,20 +83,32 @@ def main():
         "Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin",
     }
 
-    log("\n== firstRegs como OFFSET (solo varío firstRegs; maxRegs intacto) ==")
-    for off in (0, 23, 46, 69):
+    log("\n== caminar firstRegs 0,23,46,... y acumular unión ==")
+    union: set[str] = set()
+    paso_repetido = 0
+    for off in range(0, reg + 23, 23):
         jbX = dict(jb); jbX["firstRegs"] = off
         cX = dict(base); cX["jsonBusqueda"] = json.dumps(jbX, ensure_ascii=False)
         try:
             ids = _post(cli, cX, headers)
         except Exception as e:
-            log(f"  firstRegs={off}: EXCEPCIÓN {e}"); continue
-        esper = set(kav[off:off + 23])
-        got = set(ids)
-        log(f"  firstRegs={off}: recibí={len(ids)} ∩con kav[{off}:{off+23}]={len(esper & got)}/23 "
-            f"igual={esper == got} first={ids[:2]}")
+            log(f"  off={off}: EXCEPCIÓN {e}"); break
+        nuevos = len(set(ids) - union)
+        union |= set(ids)
+        log(f"  off={off:3d}: recibí={len(ids)} nuevos={nuevos} unión={len(union)}")
+        if not ids or nuevos == 0:
+            paso_repetido += 1
+            if paso_repetido >= 2:
+                log("  (dos pasos sin nuevos; corto)"); break
+        else:
+            paso_repetido = 0
 
-    log("\nFIN sonda iter 7")
+    cubiertos = len(union & kav)
+    log(f"\nUNIÓN total={len(union)} | de K_Avisos cubiertos={cubiertos}/{len(kav)} "
+        f"({cubiertos / max(1, len(kav)):.0%}) | fuera_de_kav={len(union - kav)}")
+    log("VEREDICTO:", "✅ COSECHA COMPLETA por firstRegs" if cubiertos >= 0.9 * len(kav)
+        else "❌ no cubre (ruido/estado)")
+    log("\nFIN sonda iter 8")
 
 
 if __name__ == "__main__":
