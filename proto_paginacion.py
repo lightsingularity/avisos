@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Sonda iter 6 — prueba DEFINITIVA por conjuntos (no por orden).
+"""Sonda iter 7 — `firstRegs` como OFFSET + volcado completo de btnPaginacion.
 
-Iter 5 mostró que cada POST devuelve 23 avisos DISTINTOS según los K_Avisos que
-mando, pero mi comprobación era por ORDEN (falsos negativos). Hipótesis: el
-servidor hidrata 23 de los ids que le envío en `json.K_Avisos`. Aquí se mide por
-CONJUNTO: ¿lo recibido está contenido en lo enviado? ¿coincide un tramo de 23?
-
-Si se confirma, la paginación se resuelve mandando los ids (que ya tenemos de la
-página 1) en lotes de 23.
+Confirmado: PostIndice ignora pagina/ClavAviso/cookie/json.K_Avisos; devuelve 23
+por llamada, distintos según el input. El form de página 1 ya trae firstRegs:23,
+lo que sugiere que firstRegs es el ÍNDICE INICIAL (offset) de la página. Iter 5
+falló porque cambié firstRegs Y maxRegs a la vez. Aquí se varía SOLO firstRegs y
+se compara el CONJUNTO devuelto contra kav[off:off+23].
 """
 import json
 import time
@@ -29,9 +27,23 @@ _buf: list[str] = []
 
 
 def log(*a):
-    s = " ".join(str(x) for x in a)
-    print(s, flush=True)
-    _buf.append(s)
+    s = " ".join(str(x) for x in a); print(s, flush=True); _buf.append(s)
+
+
+def _func_completa(js, nombre):
+    for pat in (f"function {nombre}", f"{nombre}=function", f"{nombre}:function"):
+        i = js.find(pat)
+        if i < 0:
+            continue
+        j = js.find("{", i); prof = 0
+        for k in range(j, min(len(js), j + 4000)):
+            if js[k] == "{":
+                prof += 1
+            elif js[k] == "}":
+                prof -= 1
+                if prof == 0:
+                    return js[i:k + 1]
+    return None
 
 
 def _form_campos(html):
@@ -71,6 +83,20 @@ def main():
     cfg = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
     cli = ClienteEducado(contacto=cfg.get("contacto", "proto"), seg_entre_solicitudes=1.0)
     cli.cargar_robots()
+
+    # --- volcado COMPLETO de btnPaginacion ---
+    js = cli.get(BASE + "/js/min/UtilComplementos.min.js").text
+    cuerpo = _func_completa(js, "btnPaginacion")
+    log("== btnPaginacion (completo) ==")
+    log(cuerpo or "no encontrado")
+    # ¿a qué función llama al final? (la que hace el POST)
+    for fn in ("ResultadoBusquedaTexto", "BusquedaxTexto", "ResultadosxTexto",
+               "PostResultados", "CargarResultados", "Paginar"):
+        c = _func_completa(js, fn)
+        if c:
+            log(f"\n== {fn} ==\n{c[:700]}")
+
+    log("\n== categoría ==")
     url_cat, html1, data1 = _categoria(cli)
     if not url_cat:
         log("sin categoría"); return
@@ -78,8 +104,8 @@ def main():
     kav = [str(x) for x in data1.get("K_Avisos", [])]
     reg = data1.get("Registros")
     base, tok = _form_campos(html1)
-    jj = json.loads(base["json"])
-    log(f"{slug} | Registros={reg} | K_Avisos={len(kav)}")
+    jb = json.loads(base["jsonBusqueda"])
+    log(f"{slug} | Registros={reg} | K_Avisos={len(kav)} | firstRegs_inicial={jb.get('firstRegs')}")
 
     headers = {
         "X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": url_cat,
@@ -87,27 +113,20 @@ def main():
         "Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin",
     }
 
-    def check(nombre, enviar):
-        jjX = dict(jj); jjX["K_Avisos"] = [int(x) for x in enviar]
-        cX = dict(base); cX["json"] = json.dumps(jjX, ensure_ascii=False)
+    log("\n== firstRegs como OFFSET (solo varío firstRegs; maxRegs intacto) ==")
+    for off in (0, 23, 46, 69):
+        jbX = dict(jb); jbX["firstRegs"] = off
+        cX = dict(base); cX["jsonBusqueda"] = json.dumps(jbX, ensure_ascii=False)
         try:
             ids = _post(cli, cX, headers)
         except Exception as e:
-            log(f"  [{nombre}] EXCEPCIÓN {e}"); return
-        env, got = set(enviar), set(ids)
-        log(f"  [{nombre}] envié={len(enviar)} recibí={len(ids)} ∩={len(env & got)} "
-            f"⊆enviados={got <= env} igual_conjunto={env == got}")
-        log(f"      enviados[:4]={enviar[:4]}")
-        log(f"      recibidos[:4]={ids[:4]}")
+            log(f"  firstRegs={off}: EXCEPCIÓN {e}"); continue
+        esper = set(kav[off:off + 23])
+        got = set(ids)
+        log(f"  firstRegs={off}: recibí={len(ids)} ∩con kav[{off}:{off+23}]={len(esper & got)}/23 "
+            f"igual={esper == got} first={ids[:2]}")
 
-    log("\n== ¿el servidor hidrata los ids que le mando? ==")
-    check("2 ids concretos", [kav[100], kav[200]])
-    check("pagina A kav[0:23]", kav[0:23])
-    check("pagina B kav[23:46]", kav[23:46])
-    check("pagina C kav[46:69]", kav[46:69])
-    check("lote 60 kav[60:120]", kav[60:120])
-
-    log("\nFIN sonda iter 6")
+    log("\nFIN sonda iter 7")
 
 
 if __name__ == "__main__":
@@ -116,4 +135,4 @@ if __name__ == "__main__":
     except Exception:
         log("EXCEPCIÓN:\n" + traceback.format_exc())
     finally:
-        print("\n".join(_buf), flush=True)  # asegura que todo quede en el log
+        print("\n".join(_buf), flush=True)
