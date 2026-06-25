@@ -26,8 +26,10 @@ de detalle. Sin backfill.
 
 Ya en `main` (listo para reusar): arreglo de **tipado** (código `K_Cla3` / título
 canónico manda sobre slug/título), **parser XML tolerante** y **aborto limpio**
-(exit 2) si el sitemap no es XML. **Pendiente** cuando vuelva el sitemap: re-captura
-para re-tipar lo ya almacenado.
+(exit 2) si el sitemap no es XML. Si los sitemaps **vuelven** a servir XML, la corrida
+actual se recupera sola (aborta en HTML, corre en XML); aun así Plan B debe quedar
+**resiliente** (usar el sitemap si está, caer a índice si no). **Pendiente** cuando
+vuelva el sitemap: re-captura para re-tipar lo ya almacenado.
 
 ---
 
