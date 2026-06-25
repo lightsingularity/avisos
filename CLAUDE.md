@@ -9,30 +9,42 @@ respect robots.txt. Never commit the SQLite DB.
 
 ---
 
+## ⚠️ Estado actual (2026-06-24) — Plan B en curso
+
+Los **sitemaps XML del sitio están caídos**: `sitemap_bienesraices.xml` (novedades)
+y `sitemap_grupos_bienesraices.xml` (grupos/índice) llevan **>12 h devolviendo una
+página HTML (HTTP 200), no XML**. Eso rompe el descubrimiento del scraper actual
+(depende de los sitemaps) y, por tanto, la corrida diaria. **Lo que SÍ funciona:**
+las páginas de índice (`/Portada/Indice/{slug}/{numero}` → JSON con `K_Avisos`) y
+las de detalle (`/Detalle/BienesRaices?Aviso={id}`).
+
+➡️ **Plan B = reconstruir el descubrimiento sin sitemaps. El prompt para una sesión
+nueva está en [`docs/plan-b-scraper.md`](docs/plan-b-scraper.md).** Resumen: scraper
+*forward-only* que descubre ids por las páginas de índice (lista de categorías sacada
+de los enlaces del home y/o del historial) y captura cada aviso NUEVO desde su página
+de detalle. Sin backfill.
+
+Ya en `main` (listo para reusar): arreglo de **tipado** (código `K_Cla3` / título
+canónico manda sobre slug/título), **parser XML tolerante** y **aborto limpio**
+(exit 2) si el sitemap no es XML. **Pendiente** cuando vuelva el sitemap: re-captura
+para re-tipar lo ya almacenado.
+
+---
+
 ## Next steps (start here)
 
-1. **Price long-tail (main open task).** ~800–900 listings (incl. ~440 *venta*)
-   have a price on the site but **not** in our data, so they don't appear in the
-   dashboard (the `analisis` view inner-joins price). They are índice listings on
-   category **page 2+**, whose price we never fetch. Reported symptom: avisos like
-   `32360772` / `32360783` visible on the web but missing from the app.
-   - **Do this — Camino A (detail-enrichment):** in `run.py`, after combining
-     sources, for each índice-only listing **without a price**, GET its detail
-     page and parse with `detail_parser` (already extracts price reliably). Add a
-     `post`/rate-limited GET path; ~1 request per listing. Decide scope:
-     **venta-only** (~440/day, ~7 min) vs **all** (~888/day, ~15 min). Then
-     re-capture the baseline (see Procedures) so existing records get prices.
-   - **Do NOT pursue Camino B (POST pagination of `/Portada/PostIndice`).** It was
-     reverse-engineered over 4 cycles and **rejected**: the endpoint returns rich
-     priced JSON but is **stateful and stalls after ~2 pages** regardless of the
-     `pagina` field (walked pages 1–6 → only 44 unique of 238). Don't retry
-     without genuinely new evidence. (Investigation lived on branch
-     `claude/proto-paginacion`.)
-2. **~25 id-only records** (no slug-derived fields, `tipo_transaccion` NULL).
-   Investigate why (category slug that didn't parse, or sitemap entries with empty
-   titles).
-3. **1 built listing still typed `terreno`** (a rare `K_Cla3` code outside the
-   majority vote). Negligible; self-corrects when next seen rich.
+**El scraper está bloqueado por los sitemaps caídos — ver "Estado actual" arriba y
+`docs/plan-b-scraper.md`. Esa es LA tarea.** Lo de antes quedó hecho o sin efecto:
+
+- ✅ **Price long-tail** — resuelto enriqueciendo la cola del índice con el detalle
+  (`enriquecer_cola: todos`).
+- ✅ **Mis-typing / built-as-`terreno`** — resuelto con la precedencia de tipo
+  estructurado (`K_Cla3` / título canónico del detalle > slug).
+- **NO reintentar Camino B (paginación POST de `/Portada/PostIndice`).** Descartado
+  tras **8 ciclos**: pagina por `firstRegs` (offset) pero el orden del servidor es
+  inestable → las páginas se traslapan y **no enumeran** la categoría (159/237 únicos
+  tras 11 páginas). El descubrimiento va por `K_Avisos` de la página 1 (trae TODOS
+  los ids de la categoría en un GET).
 
 ---
 
@@ -42,6 +54,7 @@ respect robots.txt. Never commit the SQLite DB.
 
 1. **Sitemap (novedades)** — `scraper/sitemap.py`. ~890 avisos in 1 request. For a
    new aviso *without* a caption it fetches its **detail page** (`detail_parser`).
+   ⚠️ **Caído (2026-06): el sitio devuelve HTML en esta URL; ver "Estado actual".**
 2. **Índice (full catalog)** — `scraper/indice.py`. ~2,200 avisos. Each category
    page (`/Portada/Indice/{slug}/{numero}`) embeds an `<input name="json">` with
    `K_Avisos` (all ids in the category) + `Avisos` (rich objects — price, areas,
@@ -102,5 +115,13 @@ listings only**) via `analytics.py`.
 
 ## Current state
 
-`main` has the K_Cla3-based typing (PR #2) and a clean baseline (~2,184 avisos,
-PR #3). 35 tests green. The price long-tail (Next steps #1) is the open item.
+`main` tiene: tipado por `K_Cla3` + **precedencia estructurada** (tipo del código/
+detalle > slug/título), enriquecimiento de la cola por detalle
+(`enriquecer_cola: todos`), métricas **$/m² por tipo de inmueble**, **parser XML
+tolerante** y **aborto limpio** (exit 2) si el sitemap no es XML. **50 pruebas en
+verde.** Línea base ~2,200 avisos.
+
+**Bloqueante:** los sitemaps XML del sitio sirven HTML (no XML) desde 2026-06-24 →
+el scraper y la corrida diaria están caídos. La tarea es **Plan B**
+(`docs/plan-b-scraper.md`). La re-captura para re-tipar lo ya almacenado queda
+pendiente hasta que el sitio vuelva a servir el sitemap.

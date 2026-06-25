@@ -48,8 +48,9 @@ _ATRIB_DETALLE = ("recamaras", "banos", "plantas", "m2_construccion",
 
 
 def _datos_indice(rec: dict) -> dict:
-    """Copia del registro del índice apta para el evento 'alta' (sin id_aviso)."""
-    return {k: v for k, v in rec.items() if k != "id_aviso"}
+    """Copia del registro del índice apta para el evento 'alta' (sin id_aviso ni
+    marcas internas con prefijo '_', que no se persisten)."""
+    return {k: v for k, v in rec.items() if k != "id_aviso" and not k.startswith("_")}
 
 
 def correr(cfg: dict, fecha: str | None = None) -> int:
@@ -69,7 +70,14 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     cliente.cargar_robots()
 
     # ---------------- fuente 1: sitemap (novedades) ----------------
-    entradas = descargar_sitemap(cliente)
+    try:
+        entradas = descargar_sitemap(cliente)
+    except Exception as exc:
+        # Si el sitio sirve HTML/redirección (o XML corrupto) en vez del sitemap,
+        # abortamos con un mensaje claro en vez de un crash; no se registra nada.
+        print(f"  ¡ABORTO! No se pudo leer el sitemap ({exc}). "
+              f"¿El sitio devolvió HTML/redirección en vez de XML?")
+        return 2
     ids_sitemap = {e.id_aviso for e in entradas}
     print(f"  Sitemap de hoy: {len(entradas)} avisos")
 
@@ -154,6 +162,13 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
                 for k, v in _datos_indice(rec_idx).items():
                     datos.setdefault(k, v)
                 datos["categoria"] = rec_idx.get("categoria")
+                # El tipo/transacción del CÓDIGO del índice (K_Cla3/K_Cla2) es la
+                # fuente más fiable: pisa lo inferido del título del sitemap, que es
+                # heurístico (un tipo en el nombre de la colonia lo despistaba).
+                if rec_idx.get("_tipo_fiable"):
+                    datos["tipo_inmueble"] = rec_idx["tipo_inmueble"]
+                if rec_idx.get("_trans_fiable"):
+                    datos["tipo_transaccion"] = rec_idx["tipo_transaccion"]
 
             if reaparece:
                 eventos.append({"e": "realta", "f": hoy, "id": e.id_aviso})
@@ -196,6 +211,14 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
                         datos["zona"] = extra["zona"]
                     if extra.get("colonia"):
                         datos.setdefault("colonia", extra["colonia"])
+                    # El tipo de la cola viene del SLUG (contaminado). Si no es
+                    # fiable (no salió del código K_Cla3), el del detalle (og:title)
+                    # manda: una casa cross-listada en una página de terrenos deja
+                    # de quedar 'terreno'.
+                    if not rec.get("_tipo_fiable") and extra.get("tipo_inmueble"):
+                        datos["tipo_inmueble"] = extra["tipo_inmueble"]
+                    if not rec.get("_trans_fiable") and extra.get("tipo_transaccion"):
+                        datos["tipo_transaccion"] = extra["tipo_transaccion"]
                     for k in _ATRIB_DETALLE:
                         if k in extra:
                             datos.setdefault(k, extra[k])

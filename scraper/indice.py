@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 
 from .caption_parser import _TIPOS
 from .http_polite import BASE
+from .sitemap import _raiz_xml
 
 URL_GRUPOS = "https://www.avisosdeocasion.com/sitemap_grupos_bienesraices.xml"
 _NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
@@ -60,7 +61,7 @@ _RX_JSON_VAL = re.compile(r'value="(\{[^"]*\})"', re.S)
 
 # --------------------------- sitemap de grupos ---------------------------
 def _parsear_grupos(xml_texto: str) -> list[str]:
-    raiz = ET.fromstring(xml_texto.lstrip("﻿"))
+    raiz = _raiz_xml(xml_texto)
     urls: list[str] = []
     for nodo in raiz.findall("sm:url", _NS):
         loc = nodo.findtext("sm:loc", default="", namespaces=_NS).strip()
@@ -201,13 +202,24 @@ def _registro_rico(obj: dict, trans, tipo, zona, clasif: "Clasificacion | None" 
       - ZonMun = su zona real. Se usa esa; el slug solo respalda si ZonMun falta.
     """
     idv = str(obj["K_Av"])
+    # Marcamos cuándo el tipo/transacción salen del CÓDIGO del aviso (K_Cla3/K_Cla2)
+    # —la fuente fiable—. run.py usa estas marcas (con prefijo '_', no se persisten)
+    # para que el código mande sobre lo inferido del título y para que la cola
+    # prefiera el detalle al slug contaminado.
+    tipo_fiable = trans_fiable = False
     if clasif is not None:
-        tipo = clasif.tipo.get(obj.get("K_Cla3"), tipo)
-        trans = clasif.trans.get(obj.get("K_Cla2"), trans)
+        if obj.get("K_Cla3") in clasif.tipo:
+            tipo, tipo_fiable = clasif.tipo[obj["K_Cla3"]], True
+        if obj.get("K_Cla2") in clasif.trans:
+            trans, trans_fiable = clasif.trans[obj["K_Cla2"]], True
     # La zona del propio aviso (ZonMun) es la fiable; el slug está contaminado con
     # cross-listings de otras zonas, así que solo respalda cuando ZonMun falta.
     z = (str(obj.get("ZonMun") or "").strip() or None) or zona
     rec = _registro_base(idv, trans, tipo, z)
+    if tipo_fiable:
+        rec["_tipo_fiable"] = True
+    if trans_fiable:
+        rec["_trans_fiable"] = True
 
     col = str(obj.get("Col") or "").strip()
     if col:
@@ -267,7 +279,8 @@ class ResultadoIndice:
 
 def _riqueza(rec: dict) -> int:
     """Cuántos campos de datos trae (para preferir el registro más completo)."""
-    return sum(1 for k in rec if k not in ("id_aviso", "url", "categoria"))
+    return sum(1 for k in rec if k not in ("id_aviso", "url", "categoria")
+               and not k.startswith("_"))
 
 
 @dataclass
