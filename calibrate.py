@@ -143,4 +143,7 @@ def calibrar_indice(cliente) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Plan B (temporal): calibrate.yml corre `python calibrate.py`; lo apuntamos a
+    # la sonda de descubrimiento sin sitemap. Revertir tras leer el log.
+    import sonda_plan_b
+    sonda_plan_b.main()
