@@ -41,7 +41,8 @@ depende de ellos, así que está muerto. ESTO SÍ FUNCIONA:
     áreas de forma fiable (datos "oro").
 
 META: un scraper FORWARD-ONLY que NO dependa de los sitemaps XML:
-  1. Descubrir el conjunto de ids activos SIN los sitemaps.
+  1. Descubrir el conjunto de ids activos sin DEPENDER de los sitemaps (úsalos si
+     vuelven a servir XML; cae a las páginas de índice si no).
   2. Para cada id NUEVO (que no esté ya en la bitácora), visitar su página de
      DETALLE y registrar un `alta` con los campos oro.
   3. NO hacer backfill del inventario existente — conserva la bitácora actual; solo
@@ -63,6 +64,14 @@ hace falta una fuente de ids. Usa las páginas de índice (que SÍ funcionan):
     para descubrir traen precio/tipo/zona actuales — úsalos para emitir eventos de
     cambio de precio de avisos ya conocidos (preserva el seguimiento de precios) y
     para tipar avisos de página 1 sin visitar el detalle.
+  - RESILIENCIA (por si el sitemap VUELVE): no hardcodees "sin sitemap". Al inicio,
+    INTENTA el sitemap — baja /sitemap_bienesraices.xml (y el de grupos) y valida con
+    _raiz_xml que de verdad parsea como <urlset> XML (no HTML/redirección). Si es XML
+    válido, úsalo como fuente RÁPIDA de ids/categorías (como antes, pocas requests);
+    si es HTML, cae al descubrimiento por páginas de índice de arriba. Ramifica por lo
+    que el sitio DEVUELVE en cada corrida, no por una bandera fija: así el scraper
+    funciona vuelva o no el sitemap, y un sitemap que regresa es un atajo, no una
+    rotura (ni un cambio de código).
 
 DATOS: por cada id nuevo, parsear_detalle(cliente.get(url).text) → alta. Conserva la
 precedencia de tipado reciente (tipo por código K_Cla3 / título canónico > slug; la
@@ -113,5 +122,13 @@ partir de eso; (4) implementa, prueba, dispara, verifica.
   control). NO ayuda cuando la respuesta es HTML (el caso actual de los sitemaps).
 - **Aborto limpio:** si el sitemap no es XML, la corrida sale con código 2 y mensaje
   claro en vez de un crash.
-- **Pendiente cuando vuelva el sitemap:** re-capturar la línea base para re-tipar lo
-  ya almacenado (la corrección de tipado solo afecta capturas nuevas).
+- **Si el sitemap VUELVE:**
+  - *Antes de que exista Plan B:* el scraper actual de `main` se recupera solo —
+    aborta en HTML y corre normal en XML; la próxima corrida diaria retoma sin tocar
+    nada.
+  - *Con Plan B ya hecho:* si el descubrimiento se construyó resiliente (intentar
+    sitemap → caer a índice), también lo retoma solo como atajo. No lo ignores a
+    propósito.
+  - En cualquier caso queda **pendiente una re-captura única** (vaciar
+    `data/eventos/2026-06.jsonl` y re-correr) para re-tipar lo ya almacenado: el
+    arreglo de tipado solo corrige capturas nuevas, no las filas viejas de la DB.
