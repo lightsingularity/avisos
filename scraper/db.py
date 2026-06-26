@@ -19,6 +19,11 @@ RUTA_DB = Path(__file__).resolve().parent.parent / "data" / "avisos.db"
 TIPOS_CONSTRUCCION = frozenset({"casa", "departamento", "local_oficina", "edificio"})
 TIPOS_TERRENO = frozenset({"terreno", "finca_campestre", "rancho"})
 
+# Área mínima plausible de un terreno (m²). Por debajo es captura MALA del área (p. ej.
+# 8 m²), que dispara el $/m²: con un área así NO se computa $/m². El suelo real más
+# chico ronda los 100 m². Fuente única (la usan la vista `analisis` y analytics).
+MIN_M2_TERRENO = 50
+
 # Pisos de plausibilidad del precio TOTAL (MXN), por transacción. Por debajo es un
 # PLACEHOLDER del sitio ("precio a consultar" / error de captura del anunciante), no
 # un precio real (p. ej. local en venta $4, terreno $450): no debe entrar a la base
@@ -118,7 +123,7 @@ SELECT a.*,
                  AND a.tipo_inmueble IN ({_sql_lista(TIPOS_CONSTRUCCION)})
             THEN ROUND(h.precio / a.m2_construccion, 0) END AS precio_m2_construccion,
        CASE WHEN a.tipo_inmueble IN ({_sql_lista(TIPOS_TERRENO)}) THEN
-                 CASE WHEN h.unidad = 'total' AND a.m2_terreno > 0
+                 CASE WHEN h.unidad = 'total' AND a.m2_terreno >= {MIN_M2_TERRENO}
                       THEN ROUND(h.precio / a.m2_terreno, 0)
                       WHEN h.unidad = 'm2' THEN h.precio END
             END                                              AS precio_m2_terreno,

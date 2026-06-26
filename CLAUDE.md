@@ -120,8 +120,9 @@ listings only**) via `analytics.py`.
   "precio por m²" (un terreno con "$7,500,000/m²" que en realidad vale $7.5M a
   $7,500/m²). `db.normalizar_unidad` reinterpreta como `total` cualquier `m2` por
   encima de `TECHO_PRECIO_M2` ($100k/m², imposible para suelo) al reconstruir; la
-  vista ya saca $/m² = total / m2_terreno. (Aparte, hay terrenos con `m2_terreno`
-  mal capturado —p. ej. 8 m²— que inflan su $/m²; es captura del ÁREA, no del precio.)
+  vista ya saca $/m² = total / m2_terreno. (Aparte, un `m2_terreno` mal capturado
+  —p. ej. 8 m²— inflaría el $/m²; la vista NO computa $/m² si el área es menor a
+  `MIN_M2_TERRENO` (50 m²): ningún suelo real es tan chico.)
 
 ---
 

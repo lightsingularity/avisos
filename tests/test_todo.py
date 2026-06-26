@@ -265,3 +265,20 @@ def test_terreno_m2_mal_etiquetado_da_m2_correcto(tmp_path):
     r = con.execute("SELECT precio_actual, precio_unidad, precio_m2_terreno "
                     "FROM analisis WHERE id_aviso='7'").fetchone()
     assert r[0] == 7_500_000 and r[1] == "total" and r[2] == 7500
+
+
+def test_terreno_area_implausible_no_da_precio_m2(tmp_path):
+    # Área absurda (8 m²) = captura mala del área: NO se computa $/m². Un terreno
+    # con área plausible sí.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([
+        {"e": "alta", "f": "2026-06-25", "id": "a", "datos": {
+            "tipo_transaccion": "venta", "tipo_inmueble": "terreno", "precio": 3_250_000,
+            "precio_unidad": "total", "m2_terreno": 8.0, "url": "http://x/a"}, "fotos": []},
+        {"e": "alta", "f": "2026-06-25", "id": "b", "datos": {
+            "tipo_transaccion": "venta", "tipo_inmueble": "terreno", "precio": 3_250_000,
+            "precio_unidad": "total", "m2_terreno": 500.0, "url": "http://x/b"}, "fotos": []},
+    ], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    assert con.execute("SELECT precio_m2_terreno FROM analisis WHERE id_aviso='a'").fetchone()[0] is None
+    assert con.execute("SELECT precio_m2_terreno FROM analisis WHERE id_aviso='b'").fetchone()[0] == 6500
