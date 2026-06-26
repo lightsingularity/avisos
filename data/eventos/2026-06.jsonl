@@ -2214,3 +2214,120 @@
 {"e":"alta","f":"2026-06-25","id":"32355306","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32355306","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"VALLE","categoria":"venta-terreno-VALLE","precio":7623825,"precio_unidad":"m2","colonia":"SANTA BARBARA","m2_terreno":6099.06,"metros_frente":55.0,"mas_iva":false},"fotos":[]}
 {"e":"alta","f":"2026-06-25","id":"32356487","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32356487","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"VALLE","categoria":"venta-terreno-VALLE","precio":1200,"precio_unidad":"total","colonia":"BALCONES DEL VALLE","m2_terreno":800.0,"metros_frente":19.0,"mas_iva":false},"fotos":[]}
 {"e":"corrida","f":"2026-06-25","vistos":2215,"altas":2215,"bajas":0,"cambios":0,"errores":1,"duracion_seg":1436}
+{"e":"precio","f":"2026-06-26","id":"32362613","precio":729300,"unidad":"total"}
+{"e":"alta","f":"2026-06-26","id":"32369942","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369942","tipo_transaccion":"renta","tipo_inmueble":"bodega_nave","zona":"CUMBRES","colonia":"IND. LINCOLN","precio":135000,"precio_unidad":"total","m2_terreno":1000.0,"m2_oficina":300.0,"m2_bodega":600.0,"categoria":"renta-bodega-nave-industrial-APODACA"},"fotos":[]}
+{"e":"precio","f":"2026-06-26","id":"32367173","precio":69500,"unidad":"total"}
+{"e":"precio","f":"2026-06-26","id":"32361093","precio":235000,"unidad":"total"}
+{"e":"alta","f":"2026-06-26","id":"32369975","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369975","tipo_transaccion":"renta","tipo_inmueble":"bodega_nave","zona":"CUMBRES","colonia":"ALIANZA","precio":1500,"precio_unidad":"total","m2_terreno":580.0,"m2_oficina":80.0,"m2_bodega":500.0,"categoria":"renta-bodega-nave-industrial-GUADALUPE"},"fotos":[]}
+{"e":"precio","f":"2026-06-26","id":"32358249","precio":110,"unidad":"total"}
+{"e":"alta","f":"2026-06-26","id":"32369839","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369839","tipo_transaccion":"renta","tipo_inmueble":"casa","zona":"APODACA","colonia":"MISIÓN DE LOS ANGELES","precio":18000,"precio_unidad":"total","plantas":2.0,"recamaras":3.0,"banos":3.5,"categoria":"renta-casa-APODACA"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369539","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369539","tipo_transaccion":"renta","tipo_inmueble":"casa","zona":"CARRETERA NACIONAL","colonia":"MONTEMORELOS","precio":8650,"precio_unidad":"total","plantas":1.0,"recamaras":2.0,"banos":1.0,"categoria":"renta-casa-CARRETERA-NACIONAL"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369702","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369702","tipo_transaccion":"renta","tipo_inmueble":"casa","zona":"CARRETERA NACIONAL","colonia":"ENCINOS DEL VERGEL","precio":45000,"precio_unidad":"total","plantas":2.0,"recamaras":3.0,"banos":5.0,"categoria":"renta-casa-CARRETERA-NACIONAL"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369430","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369430","tipo_transaccion":"renta","tipo_inmueble":"casa","zona":"CUMBRES","colonia":"CUMBRES ELITE","precio":51000,"precio_unidad":"total","plantas":3.0,"recamaras":5.0,"banos":5.5,"categoria":"renta-casa-CUMBRES"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369710","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369710","tipo_transaccion":"renta","tipo_inmueble":"casa","zona":"CUMBRES","categoria":"renta-casa-CUMBRES","precio":21500,"precio_unidad":"total","colonia":"CUMBRES","recamaras":3.0,"banos":3.0,"plantas":5.0,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32367229","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32367229","tipo_transaccion":"renta","tipo_inmueble":"casa","zona":"VALLE","categoria":"renta-casa-VALLE","precio":28600000,"precio_unidad":"total","colonia":"FUENTES DEL VALLE","recamaras":3.0,"banos":2.0,"plantas":3.0,"m2_construccion":593.0,"m2_terreno":331.42,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32367257","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32367257","tipo_transaccion":"renta","tipo_inmueble":"departamento","zona":"VALLE","colonia":"VALLE PONIENTE","precio":38500,"precio_unidad":"total","recamaras":2.0,"banos":2.0,"categoria":"renta-departamento-VALLE"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32370013","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32370013","tipo_transaccion":"renta","tipo_inmueble":"departamento","zona":"SANTA CATARINA","colonia":"TORRE WEST II","precio":50000,"precio_unidad":"total","recamaras":2.0,"banos":3.0,"categoria":"renta-departamento-SANTA-CATARINA"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32367112","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32367112","tipo_transaccion":"renta","tipo_inmueble":"departamento","zona":"CONTRY","colonia":"CONTRY LA SILLA","precio":9500,"precio_unidad":"total","recamaras":1.0,"banos":1.0,"categoria":"renta-departamento-CONTRY"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369946","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369946","tipo_transaccion":"renta","tipo_inmueble":"departamento","zona":"CUMBRES","categoria":"renta-departamento-CUMBRES","precio":26000,"precio_unidad":"total","colonia":"COLINAS DE SAN JERONIMO","recamaras":1.0,"banos":1.0,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369541","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369541","tipo_transaccion":"renta","tipo_inmueble":"departamento","zona":"VALLE","categoria":"renta-departamento-VALLE","precio":37500,"precio_unidad":"total","colonia":"VALLE ORIENTE","recamaras":3.0,"banos":3.0,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369956","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369956","tipo_transaccion":"renta","tipo_inmueble":"local_oficina","zona":"CONTRY","colonia":"AV LAZARO CARDENAS","categoria":"renta-local-oficina-CONTRY","precio":20764,"precio_unidad":"total","mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369978","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369978","tipo_transaccion":"renta","tipo_inmueble":"local_oficina","zona":"CUMBRES","colonia":"CUMBRES","categoria":"renta-local-oficina-CUMBRES","precio":7000,"precio_unidad":"total","m2_terreno":80.0,"mas_iva":true},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32368056","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32368056","tipo_transaccion":"renta","tipo_inmueble":"local_oficina","zona":"VALLE","categoria":"renta-local-oficina-VALLE","precio":82000,"precio_unidad":"total","colonia":"VALLE ORIENTE","mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32367307","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32367307","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"CARRETERA NACIONAL","colonia":"AMORADA 4TO SECTOR","precio":3200000,"precio_unidad":"total","m2_terreno":274.0,"metros_frente":12.0,"categoria":"venta-casa-CARRETERA-NACIONAL"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32370022","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32370022","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"CARRETERA NACIONAL","categoria":"venta-casa-CARRETERA-NACIONAL","precio":9950000,"precio_unidad":"total","colonia":"AMORADA","recamaras":3.0,"banos":3.0,"plantas":3.0,"m2_construccion":400.0,"m2_terreno":260.0,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369948","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369948","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"CARRETERA NACIONAL","colonia":"AYSSO","precio":9500000,"precio_unidad":"total","plantas":3.0,"recamaras":3.0,"m2_construccion":374.0,"m2_terreno":250.0,"banos":4.5,"categoria":"venta-terreno-CARRETERA-NACIONAL"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369551","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369551","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"CARRETERA NACIONAL","categoria":"venta-casa-CARRETERA-NACIONAL","precio":6990000,"precio_unidad":"total","colonia":"BOSQUES DE SAN PEDRO","recamaras":3.0,"banos":3.0,"plantas":3.0,"m2_construccion":317.0,"m2_terreno":204.2,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369754","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369754","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"CARRETERA NACIONAL","categoria":"venta-casa-CARRETERA-NACIONAL","precio":23375000,"precio_unidad":"total","colonia":"LA HERRADURA CLUB DE GOLF","recamaras":4.0,"banos":4.0,"plantas":2.0,"m2_construccion":491.0,"m2_terreno":704.0,"metros_frente":35.0,"mas_iva":false},"fotos":[]}
+{"e":"precio","f":"2026-06-26","id":"32358151","precio":2800000,"unidad":"total"}
+{"e":"alta","f":"2026-06-26","id":"32369562","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369562","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"CONTRY","colonia":"VILLA LOS PINOS","precio":6550000,"precio_unidad":"total","plantas":3.0,"recamaras":4.0,"m2_construccion":284.0,"m2_terreno":120.0,"banos":3.5,"categoria":"venta-casa-CONTRY"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369957","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369957","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"CONTRY","colonia":"CORTIJO DEL RIO","precio":6500000,"precio_unidad":"total","plantas":2.0,"recamaras":3.0,"m2_construccion":243.0,"m2_terreno":230.0,"banos":2.5,"categoria":"venta-terreno-CONTRY"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32370018","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32370018","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"CUMBRES","colonia":"RESIDENCIAL LAS COLINAS","precio":12000000,"precio_unidad":"total","plantas":3.0,"recamaras":3.0,"m2_construccion":315.0,"m2_terreno":210.0,"banos":4.5,"categoria":"venta-casa-CUMBRES"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32370014","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32370014","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"CUMBRES","colonia":"SAN JERONIMO","precio":6780000,"precio_unidad":"total","plantas":2.0,"recamaras":2.0,"m2_construccion":173.0,"m2_terreno":119.0,"banos":3.5,"categoria":"venta-casa-CUMBRES"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369939","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369939","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"CUMBRES","colonia":"JOYA DE LA MONTAÑA","precio":3000000,"precio_unidad":"total","m2_terreno":230.0,"metros_frente":25.0,"categoria":"venta-terreno-CUMBRES"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32362854","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32362854","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"SAN NICOLAS DE LOS GARZA","colonia":"PARAISO DE ANAHUAC","precio":2850000,"precio_unidad":"total","plantas":2.0,"recamaras":3.0,"m2_construccion":125.0,"m2_terreno":96.0,"banos":1.5,"categoria":"venta-casa-SAN-NICOLAS-DE-LOS-GARZA"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32364216","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32364216","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"VALLE","categoria":"venta-casa-VALLE","precio":61000000,"precio_unidad":"total","colonia":"LOS RIOS","recamaras":4.0,"banos":4.0,"plantas":1.0,"m2_construccion":900.0,"m2_terreno":1500.0,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32364222","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32364222","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"VALLE","categoria":"venta-casa-VALLE","precio":28000000,"precio_unidad":"total","colonia":"SAN AGUSTIN","recamaras":3.0,"banos":3.0,"plantas":3.0,"m2_construccion":502.0,"m2_terreno":354.0,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369910","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369910","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"FORANEOS","categoria":"venta-casa-VALLE","precio":1230000,"precio_unidad":"total","colonia":"VALLE DE LOS ENCINOS JAVER","recamaras":2.0,"banos":2.0,"plantas":2.0,"m2_construccion":75.0,"m2_terreno":98.0,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369935","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369935","tipo_transaccion":"venta","tipo_inmueble":"casa","zona":"FORANEOS","categoria":"venta-casa-VALLE","precio":2200000,"precio_unidad":"total","colonia":"EJIDO 28 DE AGOSTO","m2_terreno":480000.0,"metros_frente":156.0,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32367676","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32367676","tipo_transaccion":"venta","tipo_inmueble":"departamento","zona":"CUMBRES","colonia":"DINASTIA","precio":9080000,"precio_unidad":"total","plantas":1.0,"recamaras":2.0,"m2_construccion":100.0,"banos":2.0,"categoria":"venta-departamento-CENTRO"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369941","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369941","tipo_transaccion":"venta","tipo_inmueble":"departamento","zona":"VALLE","colonia":"TRES VIENTOS","precio":56000000,"precio_unidad":"total","plantas":1.0,"recamaras":3.0,"m2_construccion":706.0,"banos":3.5,"categoria":"venta-departamento-VALLE"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32367049","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32367049","tipo_transaccion":"venta","tipo_inmueble":"departamento","zona":"VALLE","categoria":"venta-departamento-VALLE","precio":12400000,"precio_unidad":"total","colonia":"TORRE WEST","recamaras":3.0,"banos":3.0,"plantas":1.0,"m2_construccion":145.0,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369588","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369588","tipo_transaccion":"venta","tipo_inmueble":"departamento","zona":"VALLE","categoria":"venta-departamento-VALLE","precio":6600000,"precio_unidad":"total","colonia":"SANTA MARIA","recamaras":2.0,"banos":2.0,"plantas":1.0,"m2_construccion":102.0,"mas_iva":false},"fotos":[]}
+{"e":"precio","f":"2026-06-26","id":"32364337","precio":19375000,"unidad":"total"}
+{"e":"precio","f":"2026-06-26","id":"32323290","precio":2719112,"unidad":"total"}
+{"e":"precio","f":"2026-06-26","id":"32361418","precio":4347200,"unidad":"total"}
+{"e":"precio","f":"2026-06-26","id":"32368465","precio":30060000,"unidad":"total"}
+{"e":"alta","f":"2026-06-26","id":"32367335","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32367335","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"CARRETERA NACIONAL","categoria":"venta-terreno-CARRETERA-NACIONAL","precio":7900000,"precio_unidad":"total","colonia":"SIERRA ALTA","m2_terreno":809.0,"metros_frente":19.0,"mas_iva":false},"fotos":[]}
+{"e":"precio","f":"2026-06-26","id":"32369882","precio":9991800,"unidad":"total"}
+{"e":"alta","f":"2026-06-26","id":"32369729","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369729","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"GUADALUPE","categoria":"venta-terreno-CENTRO","precio":620000,"precio_unidad":"total","colonia":"JARDINES DE SAN MIGUEL","m2_terreno":126.54,"metros_frente":16.5,"mas_iva":false},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32367232","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32367232","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"GARCIA","colonia":"SAN BLAS","precio":78563993,"precio_unidad":"total","m2_terreno":41349.0,"metros_frente":219.0,"categoria":"venta-terreno-GARCIA"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369947","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369947","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"CONTRY","colonia":"LAS BRISAS","precio":3200000,"precio_unidad":"total","m2_terreno":230.0,"metros_frente":12.0,"categoria":"venta-terreno-CONTRY"},"fotos":[]}
+{"e":"alta","f":"2026-06-26","id":"32369922","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369922","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"CUMBRES","categoria":"venta-terreno-CUMBRES","precio":9000000,"precio_unidad":"total","colonia":"ESPACIO CUMBRES","m2_terreno":677.0,"metros_frente":12.0,"mas_iva":false},"fotos":[]}
+{"e":"precio","f":"2026-06-26","id":"32362222","precio":194575500,"unidad":"total"}
+{"e":"alta","f":"2026-06-26","id":"32367233","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32367233","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"GARCIA","categoria":"venta-terreno-GARCIA","precio":29532672,"precio_unidad":"total","colonia":"VALLE DE SAN BLAS","m2_terreno":17372.16,"metros_frente":198.79,"mas_iva":false},"fotos":[]}
+{"e":"precio","f":"2026-06-26","id":"32365364","precio":65293500,"unidad":"total"}
+{"e":"alta","f":"2026-06-26","id":"32369940","datos":{"url":"https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32369940","tipo_transaccion":"venta","tipo_inmueble":"terreno","zona":"VALLE","categoria":"venta-terreno-VALLE","precio":17700000,"precio_unidad":"total","colonia":"LA CIMA","m2_terreno":712.0,"metros_frente":19.0,"mas_iva":false},"fotos":[]}
+{"e":"baja","f":"2026-06-26","id":"32320776"}
+{"e":"baja","f":"2026-06-26","id":"32340612"}
+{"e":"baja","f":"2026-06-26","id":"32340719"}
+{"e":"baja","f":"2026-06-26","id":"32340724"}
+{"e":"baja","f":"2026-06-26","id":"32340727"}
+{"e":"baja","f":"2026-06-26","id":"32340782"}
+{"e":"baja","f":"2026-06-26","id":"32340783"}
+{"e":"baja","f":"2026-06-26","id":"32340807"}
+{"e":"baja","f":"2026-06-26","id":"32340816"}
+{"e":"baja","f":"2026-06-26","id":"32340849"}
+{"e":"baja","f":"2026-06-26","id":"32340883"}
+{"e":"baja","f":"2026-06-26","id":"32340889"}
+{"e":"baja","f":"2026-06-26","id":"32340937"}
+{"e":"baja","f":"2026-06-26","id":"32340938"}
+{"e":"baja","f":"2026-06-26","id":"32340939"}
+{"e":"baja","f":"2026-06-26","id":"32340954"}
+{"e":"baja","f":"2026-06-26","id":"32350090"}
+{"e":"baja","f":"2026-06-26","id":"32351659"}
+{"e":"baja","f":"2026-06-26","id":"32351840"}
+{"e":"baja","f":"2026-06-26","id":"32351852"}
+{"e":"baja","f":"2026-06-26","id":"32352924"}
+{"e":"baja","f":"2026-06-26","id":"32353027"}
+{"e":"baja","f":"2026-06-26","id":"32353155"}
+{"e":"baja","f":"2026-06-26","id":"32353239"}
+{"e":"baja","f":"2026-06-26","id":"32354614"}
+{"e":"baja","f":"2026-06-26","id":"32354626"}
+{"e":"baja","f":"2026-06-26","id":"32354627"}
+{"e":"baja","f":"2026-06-26","id":"32354671"}
+{"e":"baja","f":"2026-06-26","id":"32354679"}
+{"e":"baja","f":"2026-06-26","id":"32354694"}
+{"e":"baja","f":"2026-06-26","id":"32354698"}
+{"e":"baja","f":"2026-06-26","id":"32354699"}
+{"e":"baja","f":"2026-06-26","id":"32354749"}
+{"e":"baja","f":"2026-06-26","id":"32354751"}
+{"e":"baja","f":"2026-06-26","id":"32354756"}
+{"e":"baja","f":"2026-06-26","id":"32354757"}
+{"e":"baja","f":"2026-06-26","id":"32354776"}
+{"e":"baja","f":"2026-06-26","id":"32354781"}
+{"e":"baja","f":"2026-06-26","id":"32354784"}
+{"e":"baja","f":"2026-06-26","id":"32354785"}
+{"e":"baja","f":"2026-06-26","id":"32354787"}
+{"e":"baja","f":"2026-06-26","id":"32354793"}
+{"e":"baja","f":"2026-06-26","id":"32354812"}
+{"e":"baja","f":"2026-06-26","id":"32354813"}
+{"e":"baja","f":"2026-06-26","id":"32354824"}
+{"e":"baja","f":"2026-06-26","id":"32354826"}
+{"e":"baja","f":"2026-06-26","id":"32354828"}
+{"e":"baja","f":"2026-06-26","id":"32354835"}
+{"e":"baja","f":"2026-06-26","id":"32354837"}
+{"e":"baja","f":"2026-06-26","id":"32354838"}
+{"e":"baja","f":"2026-06-26","id":"32354853"}
+{"e":"baja","f":"2026-06-26","id":"32354860"}
+{"e":"baja","f":"2026-06-26","id":"32354864"}
+{"e":"baja","f":"2026-06-26","id":"32354890"}
+{"e":"baja","f":"2026-06-26","id":"32354899"}
+{"e":"baja","f":"2026-06-26","id":"32354921"}
+{"e":"baja","f":"2026-06-26","id":"32361735"}
+{"e":"baja","f":"2026-06-26","id":"32364517"}
+{"e":"baja","f":"2026-06-26","id":"32366869"}
+{"e":"baja","f":"2026-06-26","id":"32367029"}
+{"e":"baja","f":"2026-06-26","id":"32369764"}
+{"e":"baja","f":"2026-06-26","id":"32369933"}
+{"e":"corrida","f":"2026-06-26","vistos":2195,"altas":42,"bajas":62,"cambios":12,"errores":0,"duracion_seg":81}
