@@ -197,3 +197,88 @@ def test_guarda_aborta_ante_colapso(monkeypatch, tmp_path):
 def test_guarda_aborta_sitemap_vacio(monkeypatch, tmp_path):
     assert _simular_dia(monkeypatch, tmp_path, [_entrada("1", *CASA)], "2026-06-12") == 0
     assert _simular_dia(monkeypatch, tmp_path, [], "2026-06-13") == 2
+
+
+# ------------------ filtro de precios placeholder ------------------
+# El sitio sirve precios basura para algunos avisos ("a consultar" como $4, $450).
+# La bitácora los conserva, pero la base derivada NO los registra: no son precios.
+def test_precio_valido_pisos():
+    assert dbmod.precio_valido(4, "total", "venta") is False
+    assert dbmod.precio_valido(100_000, "total", "venta") is True
+    assert dbmod.precio_valido(460, "total", "renta") is False
+    assert dbmod.precio_valido(1_800, "total", "renta") is True
+    assert dbmod.precio_valido(600, "total", "traspaso") is False
+    assert dbmod.precio_valido(980, "m2", "venta") is True      # por m²: otra escala
+    assert dbmod.precio_valido(None, "total", "venta") is True  # sin precio: nada que filtrar
+
+
+def test_precio_placeholder_no_entra_a_analisis(tmp_path):
+    def _alta(idv, precio, trans="venta"):
+        return {"e": "alta", "f": "2026-06-25", "id": idv,
+                "datos": {"tipo_transaccion": trans, "tipo_inmueble": "casa",
+                          "precio": precio, "precio_unidad": "total",
+                          "url": f"http://x/{idv}"}, "fotos": []}
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([_alta("1", 50), _alta("2", 2_000_000)], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    # Ambos avisos existen; solo el de precio real entra a la vista 'analisis'.
+    assert con.execute("SELECT COUNT(*) FROM avisos").fetchone()[0] == 2
+    assert {r[0] for r in con.execute("SELECT id_aviso FROM analisis")} == {"2"}
+    assert con.execute(
+        "SELECT COUNT(*) FROM historial_precios WHERE id_aviso='1'").fetchone()[0] == 0
+
+
+def test_precio_placeholder_luego_real_si_aparece(tmp_path):
+    # Alta con placeholder y, después, un cambio a precio real: el aviso entra al
+    # tablero solo cuando llega el precio válido.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([
+        {"e": "alta", "f": "2026-06-25", "id": "9",
+         "datos": {"tipo_transaccion": "venta", "tipo_inmueble": "casa",
+                   "precio": 4, "precio_unidad": "total", "url": "http://x/9"}, "fotos": []},
+        {"e": "precio", "f": "2026-06-26", "id": "9", "precio": 3_500_000, "unidad": "total"},
+    ], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    fila = con.execute("SELECT precio_actual FROM analisis WHERE id_aviso='9'").fetchone()
+    assert fila == (3_500_000,)   # el placeholder se ignoró; el real sí entró
+
+
+# ---------- precio 'por m²' mal etiquetado (en realidad un total) ----------
+def test_normaliza_precio_m2_alto_a_total():
+    # El sitio mete el TOTAL en el campo de "precio por m²" ($7.5M/m²): se
+    # reinterpreta como total. Un precio por m² real (bajo) se respeta.
+    assert dbmod.normalizar_unidad(7_500_000, "m2") == (7_500_000, "total")
+    assert dbmod.normalizar_unidad(17_500, "m2") == (17_500, "m2")       # per-m² real
+    assert dbmod.normalizar_unidad(5_000_000, "total") == (5_000_000, "total")
+
+
+def test_terreno_m2_mal_etiquetado_da_m2_correcto(tmp_path):
+    # Terreno con "precio por m²" = total (7.5M) y 1000 m²: la vista debe dar
+    # $/m² = 7,500 (reinterpretado a total), no 7,500,000.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([{
+        "e": "alta", "f": "2026-06-25", "id": "7",
+        "datos": {"tipo_transaccion": "venta", "tipo_inmueble": "terreno",
+                  "precio": 7_500_000, "precio_unidad": "m2", "m2_terreno": 1000.0,
+                  "url": "http://x/7"}, "fotos": []}], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    r = con.execute("SELECT precio_actual, precio_unidad, precio_m2_terreno "
+                    "FROM analisis WHERE id_aviso='7'").fetchone()
+    assert r[0] == 7_500_000 and r[1] == "total" and r[2] == 7500
+
+
+def test_terreno_area_implausible_no_da_precio_m2(tmp_path):
+    # Área absurda (8 m²) = captura mala del área: NO se computa $/m². Un terreno
+    # con área plausible sí.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([
+        {"e": "alta", "f": "2026-06-25", "id": "a", "datos": {
+            "tipo_transaccion": "venta", "tipo_inmueble": "terreno", "precio": 3_250_000,
+            "precio_unidad": "total", "m2_terreno": 8.0, "url": "http://x/a"}, "fotos": []},
+        {"e": "alta", "f": "2026-06-25", "id": "b", "datos": {
+            "tipo_transaccion": "venta", "tipo_inmueble": "terreno", "precio": 3_250_000,
+            "precio_unidad": "total", "m2_terreno": 500.0, "url": "http://x/b"}, "fotos": []},
+    ], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    assert con.execute("SELECT precio_m2_terreno FROM analisis WHERE id_aviso='a'").fetchone()[0] is None
+    assert con.execute("SELECT precio_m2_terreno FROM analisis WHERE id_aviso='b'").fetchone()[0] == 6500

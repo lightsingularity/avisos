@@ -1,5 +1,16 @@
 # Plan B — scraper sin sitemaps (relevo para sesión nueva)
 
+> ## ✅ IMPLEMENTADO (2026-06-25)
+> Este Plan B **ya está hecho**. El descubrimiento sin sitemaps vive en
+> `scraper/indice.urls_categoria` (resiliente: sitemap de grupos si sirve XML, slugs
+> del **historial** si no) y la orquestación en `run.py` (sitemap **opcional**, índice
+> como fuente principal). Hallazgo clave de la sonda en vivo: el **número de la URL es
+> COSMÉTICO**, el **slug rutea** (`NUM_CATEGORIA_PLACEHOLDER`). Guardas: truncamiento a
+> 500 y protección de `categoria=None`. Si el log está vacío (re-captura / clon nuevo)
+> el descubrimiento cae a una **semilla** versionada de slugs. **59 pruebas en verde.**
+> La **línea base ya se re-capturó limpia** vía Plan B + semilla (sin esperar al
+> sitemap). El doc se conserva como registro del diseño y del razonamiento.
+
 **Cómo usar:** abre una sesión NUEVA de Claude Code en este repo y pásale el
 prompt de abajo (o dile "lee `docs/plan-b-scraper.md` y ejecútalo"). Se diseñó
 para empezar en frío; primero debe leer `CLAUDE.md`.

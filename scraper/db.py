@@ -19,6 +19,44 @@ RUTA_DB = Path(__file__).resolve().parent.parent / "data" / "avisos.db"
 TIPOS_CONSTRUCCION = frozenset({"casa", "departamento", "local_oficina", "edificio"})
 TIPOS_TERRENO = frozenset({"terreno", "finca_campestre", "rancho"})
 
+# Área mínima plausible de un terreno (m²). Por debajo es captura MALA del área (p. ej.
+# 8 m²), que dispara el $/m²: con un área así NO se computa $/m². El suelo real más
+# chico ronda los 100 m². Fuente única (la usan la vista `analisis` y analytics).
+MIN_M2_TERRENO = 50
+
+# Pisos de plausibilidad del precio TOTAL (MXN), por transacción. Por debajo es un
+# PLACEHOLDER del sitio ("precio a consultar" / error de captura del anunciante), no
+# un precio real (p. ej. local en venta $4, terreno $450): no debe entrar a la base
+# derivada ni, por tanto, al tablero. La bitácora lo conserva tal cual (es la fuente
+# de verdad); esto solo filtra la SQLite reconstruida y es ajustable aquí.
+PISO_PRECIO_TOTAL = {"venta": 100_000, "traspaso": 10_000, "renta": 1_000}
+
+
+def precio_valido(precio, unidad, transaccion) -> bool:
+    """False si un precio 'total' cae por debajo del piso de su transacción (un
+    placeholder implausible). Los precios por m² (terrenos) usan otra escala y no se
+    filtran aquí; un precio nulo se deja pasar (no hay nada que registrar)."""
+    if unidad != "total" or precio is None:
+        return True
+    piso = PISO_PRECIO_TOTAL.get(transaccion)
+    return piso is None or precio >= piso
+
+
+# Techo de plausibilidad del precio POR m² (MXN/m²). El sitio a veces mete el precio
+# TOTAL en el campo de "precio por m²" (verificado: p. ej. un terreno con "$7,500,000
+# por m²" que en realidad vale $7.5M totales a $7,500/m²). Ningún suelo cuesta
+# $100,000/m², así que por encima de este techo NO es un precio por m² real sino un
+# total mal etiquetado: lo reinterpretamos como 'total' (la vista ya saca $/m² =
+# total / m2_terreno). Ajustable aquí; la bitácora conserva la unidad original.
+TECHO_PRECIO_M2 = 100_000
+
+
+def normalizar_unidad(precio, unidad):
+    """Reinterpreta un 'precio por m²' implausiblemente alto como precio total."""
+    if unidad == "m2" and precio is not None and precio > TECHO_PRECIO_M2:
+        return precio, "total"
+    return precio, unidad
+
 
 def _sql_lista(valores) -> str:
     """{'a', 'b'} -> "'a', 'b'" para una cláusula IN de SQLite."""
@@ -85,7 +123,7 @@ SELECT a.*,
                  AND a.tipo_inmueble IN ({_sql_lista(TIPOS_CONSTRUCCION)})
             THEN ROUND(h.precio / a.m2_construccion, 0) END AS precio_m2_construccion,
        CASE WHEN a.tipo_inmueble IN ({_sql_lista(TIPOS_TERRENO)}) THEN
-                 CASE WHEN h.unidad = 'total' AND a.m2_terreno > 0
+                 CASE WHEN h.unidad = 'total' AND a.m2_terreno >= {MIN_M2_TERRENO}
                       THEN ROUND(h.precio / a.m2_terreno, 0)
                       WHEN h.unidad = 'm2' THEN h.precio END
             END                                              AS precio_m2_terreno,
@@ -131,20 +169,26 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
             [ev["id"]] + [d.get(c) for c in _CAMPOS_AVISO] + [f, f],
         )
         if "precio" in d:
-            con.execute(
-                "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
-                (ev["id"], f, d["precio"], d.get("precio_unidad", "total")),
-            )
+            precio, unidad = normalizar_unidad(d["precio"], d.get("precio_unidad", "total"))
+            if precio_valido(precio, unidad, d.get("tipo_transaccion")):
+                con.execute(
+                    "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
+                    (ev["id"], f, precio, unidad),
+                )
         for i, u in enumerate(ev.get("fotos", []), start=1):
             con.execute(
                 "INSERT OR IGNORE INTO fotos (id_aviso, url_foto, orden) VALUES (?,?,?)",
                 (ev["id"], u, i),
             )
     elif e == "precio":
-        con.execute(
-            "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
-            (ev["id"], f, ev["precio"], ev.get("unidad", "total")),
-        )
+        fila = con.execute(
+            "SELECT tipo_transaccion FROM avisos WHERE id_aviso=?", (ev["id"],)).fetchone()
+        precio, unidad = normalizar_unidad(ev["precio"], ev.get("unidad", "total"))
+        if precio_valido(precio, unidad, fila[0] if fila else None):
+            con.execute(
+                "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
+                (ev["id"], f, precio, unidad),
+            )
         con.execute("UPDATE avisos SET fecha_ultima_vista=? WHERE id_aviso=?", (f, ev["id"]))
     elif e == "baja":
         con.execute("UPDATE avisos SET fecha_baja=? WHERE id_aviso=?", (f, ev["id"]))

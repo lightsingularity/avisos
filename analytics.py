@@ -17,7 +17,7 @@ import pandas as pd
 
 # Tipos donde "precio por m²" se entiende sobre construcción vs. sobre terreno.
 # Definición única en scraper.db (la usa también la vista `analisis`).
-from scraper.db import TIPOS_CONSTRUCCION, TIPOS_TERRENO
+from scraper.db import MIN_M2_TERRENO, TIPOS_CONSTRUCCION, TIPOS_TERRENO
 
 
 # ----------------------------- carga -----------------------------------
@@ -99,7 +99,7 @@ def serie_mensual(hist: pd.DataFrame, modo: str = "total") -> pd.DataFrame:
         # unidad 'm2' ya viene por metro; unidad 'total' se divide entre el terreno
         directo = h[h["unidad"] == "m2"].copy()
         directo["valor"] = directo["precio"]
-        calc = h[(h["unidad"] == "total") & (h["m2_terreno"] > 0)].copy()
+        calc = h[(h["unidad"] == "total") & (h["m2_terreno"] >= MIN_M2_TERRENO)].copy()
         calc["valor"] = calc["precio"] / calc["m2_terreno"]
         h = pd.concat([directo, calc], ignore_index=True)
     else:

@@ -2,13 +2,17 @@
 
 Flujo:
   1. Carga el estado actual reproduciendo la bitácora de eventos.
-  2. Descarga el sitemap de bienes raíces (1 solicitud) — la "novedades".
-  3. (Opcional) Cosecha el ÍNDICE: las páginas de categoría del sitemap de
-     grupos, que completan el catálogo (~2,332 vs ~859 del sitemap). Combina
-     ambas fuentes y deduplica por id_aviso.
-  4. GUARDAS DE SEGURIDAD: si el sitemap viene vacío o, con fuentes confiables,
-     hoy vemos menos de la mitad de los avisos de ayer, ABORTA sin registrar
-     bajas (un parser roto jamás debe marcar todo el inventario como dado de baja).
+  2. Sitemap de novedades — OPCIONAL. Desde 2026-06 el sitio sirve HTML en vez de
+     XML; ya NO es obligatorio. Si parsea como XML lo usamos (se autocura solo);
+     si no, seguimos con el índice como fuente principal. Nunca abortamos solo
+     porque el sitemap esté caído.
+  3. Cosecha el ÍNDICE (catálogo completo): las páginas de categoría. La lista de
+     categorías es resiliente (`urls_categoria`): el sitemap de grupos si sirve
+     XML, o los slugs de categoría del HISTORIAL si no (el número de la URL es
+     cosmético, el slug rutea). Combina con el sitemap y deduplica por id_aviso.
+  4. GUARDAS DE SEGURIDAD: si NI el sitemap NI el índice arrojan avisos, o —con
+     fuentes confiables— hoy vemos menos de la mitad de los de ayer, ABORTA sin
+     registrar bajas (un fallo de descubrimiento jamás debe vaciar el inventario).
   5. Altas: parsea título+caption (sitemap) y/o tarjeta (índice). Si el aviso no
      trae caption y la config lo permite, visita su página de detalle.
   6. Cambios de precio y reapariciones para los ya conocidos.
@@ -69,21 +73,23 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     )
     cliente.cargar_robots()
 
-    # ---------------- fuente 1: sitemap (novedades) ----------------
+    # Slugs de categoría ya vistos: fuente de descubrimiento del índice cuando el
+    # sitemap de grupos está caído (el número de la URL es cosmético, el slug rutea).
+    categorias_historicas = {s["categoria"] for s in estado.values() if s.get("categoria")}
+
+    # ---------------- fuente 1: sitemap (novedades), OPCIONAL ----------------
+    # Ya NO es obligatorio (el sitio sirve HTML desde 2026-06). Si parsea como XML
+    # lo usamos —y la corrida se autocura sola cuando el sitio vuelve—; si no,
+    # seguimos con el índice como fuente principal. Jamás abortamos solo por esto.
+    sitemap_ok = False
+    entradas: list = []
     try:
         entradas = descargar_sitemap(cliente)
+        sitemap_ok = bool(entradas)
+        print(f"  Sitemap de hoy: {len(entradas)} avisos")
     except Exception as exc:
-        # Si el sitio sirve HTML/redirección (o XML corrupto) en vez del sitemap,
-        # abortamos con un mensaje claro en vez de un crash; no se registra nada.
-        print(f"  ¡ABORTO! No se pudo leer el sitemap ({exc}). "
-              f"¿El sitio devolvió HTML/redirección en vez de XML?")
-        return 2
+        print(f"  Sitemap no disponible ({exc}); el índice será la fuente principal.")
     ids_sitemap = {e.id_aviso for e in entradas}
-    print(f"  Sitemap de hoy: {len(entradas)} avisos")
-
-    if not entradas:
-        print("  ¡ABORTO! El sitemap vino vacío; no se registra nada.")
-        return 2
 
     # ---------------- fuente 2: índice (catálogo completo) ----------------
     usar_indice = cfg.get("usar_indice", False)
@@ -92,10 +98,10 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     idx = None
     if usar_indice:
         try:
-            idx = cosechar_indice(cliente, cfg)
+            idx = cosechar_indice(cliente, cfg, categorias_historicas)
             print(f"  Índice de hoy: {len(idx.registros)} avisos en "
                   f"{len(idx.categorias_ok)}/{idx.categorias_total} categorías "
-                  f"({idx.paginas_ok}/{idx.paginas_total} páginas OK, "
+                  f"(fuente: {idx.fuente}, {idx.paginas_ok}/{idx.paginas_total} páginas OK, "
                   f"cobertura {idx.cobertura:.0%})")
         except Exception as exc:  # el índice es aditivo: su caída no tumba la corrida
             print(f"  Índice no disponible esta corrida: {exc}")
@@ -109,6 +115,14 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     indice_confiable = (not usar_indice) or (idx is not None and cobertura >= umbral_cobertura)
 
     ids_hoy = ids_sitemap | set(registros_indice)
+
+    # ---------------- guarda: descubrimiento vacío ----------------
+    # Si NI el sitemap NI el índice arrojaron avisos, abortamos limpio (exit 2) sin
+    # tocar la bitácora: un fallo de descubrimiento jamás debe vaciar el inventario.
+    if not ids_hoy:
+        print("  ¡ABORTO! Ni el sitemap ni el índice arrojaron avisos; "
+              "no se registra nada.")
+        return 2
 
     # ---------------- guarda de colapso ----------------
     if indice_confiable and len(activos_previos) >= MIN_PREVIO_GUARDA and \
@@ -247,8 +261,10 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     #   - sin índice (modo heredado): el sitemap se trata como inventario completo.
     #   - con índice poco confiable: NO se calculan bajas (evita bajas falsas).
     #   - con índice confiable: un aviso ausente se da de baja solo si su categoría
-    #     se descargó completa (o, si no tiene categoría registrada, solo cuando
-    #     TODO el índice vino completo).
+    #     se descargó completa. Los avisos SIN categoría (capturas viejas solo del
+    #     sitemap) solo podían confirmarse por el sitemap: sin él NO se dan de baja
+    #     (no podemos ver hoy su "casa"); con sitemap, se exige que TODO el índice
+    #     viniera completo.
     ausentes = sorted(activos_previos - ids_hoy)
     if not usar_indice:
         baja_ids = ausentes
@@ -261,13 +277,16 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
         omitidas = 0
         for idv in ausentes:
             cat = estado[idv].get("categoria")
-            cubierto = (cat in categorias_ok) if cat else todo_indice_ok
+            if cat:
+                cubierto = cat in categorias_ok
+            else:
+                cubierto = sitemap_ok and todo_indice_ok
             if cubierto:
                 baja_ids.append(idv)
             else:
                 omitidas += 1
         if omitidas:
-            print(f"  {omitidas} ausentes en categorías no descargadas: NO se dan de baja.")
+            print(f"  {omitidas} ausentes sin cobertura hoy: NO se dan de baja.")
 
     for id_baja in baja_ids:
         eventos.append({"e": "baja", "f": hoy, "id": id_baja})
