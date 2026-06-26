@@ -12,6 +12,8 @@ La página de categoría no expone tarjetas raspables ni paginación GET: incrus
 `<input name="json">` con `K_Avisos` (todos los ids de la categoría) y `Avisos`
 (objetos ricos de la página 1). De ahí sale todo.
 """
+import html as htmlmod
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -251,7 +253,8 @@ def _correr(monkeypatch, tmp_path, entradas, idx, fecha, cfg=None):
     monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: type("C", (), {
         "cargar_robots": lambda self: None})())
     monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: entradas)
-    monkeypatch.setattr(runmod, "cosechar_indice", lambda c, cfg=None: idx)
+    monkeypatch.setattr(runmod, "cosechar_indice",
+                        lambda c, cfg=None, categorias_historicas=None: idx)
     base = {"detalle": "nunca", "usar_indice": True}
     if cfg:
         base.update(cfg)
@@ -473,7 +476,8 @@ def test_cola_adopta_tipo_del_detalle_sobre_slug(monkeypatch, tmp_path):
     monkeypatch.setattr(evmod, "DIR_EVENTOS", tmp_path / "eventos")
     monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: Cli())
     monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: [dummy])
-    monkeypatch.setattr(runmod, "cosechar_indice", lambda c, cfg=None: idx)
+    monkeypatch.setattr(runmod, "cosechar_indice",
+                        lambda c, cfg=None, categorias_historicas=None: idx)
     cfg = {"usar_indice": True, "detalle": "nunca", "indice": {"enriquecer_cola": "todos"}}
     assert runmod.correr(cfg, fecha="2026-06-20") == 0
 
@@ -481,3 +485,130 @@ def test_cola_adopta_tipo_del_detalle_sobre_slug(monkeypatch, tmp_path):
     fila = con.execute("SELECT tipo_inmueble, precio_actual FROM analisis "
                        "WHERE id_aviso='32399999'").fetchone()
     assert fila == ("casa", 4_500_000)   # el detalle pisó el 'terreno' del slug
+
+
+# ============ Plan B: descubrimiento sin los sitemaps XML (caídos) ============
+# El número de /Portada/Indice/{slug}/{n} es COSMÉTICO (verificado en vivo): el
+# slug rutea. Cuando el sitemap de grupos sirve HTML, las categorías se descubren
+# desde los slugs del HISTORIAL con número placeholder. Si el sitemap vuelve a
+# servir XML, se usa como atajo (autocura). Ver scraper/indice.urls_categoria.
+from scraper.indice import (  # noqa: E402
+    NUM_CATEGORIA_PLACEHOLDER,
+    URL_GRUPOS,
+    urls_categoria,
+)
+from scraper.http_polite import BASE  # noqa: E402
+
+_HTML_NO_XML = "<!DOCTYPE html><html><body>PageNotFound</body></html>"
+
+
+def _url_hist(slug):
+    return f"{BASE}/Portada/Indice/{slug}/{NUM_CATEGORIA_PLACEHOLDER}"
+
+
+def _pagina_categoria(registros, k_avisos, avisos=()):
+    """HTML mínimo con el <input name='json'> que el sitio incrusta."""
+    obj = {"Registros": registros, "K_Avisos": list(k_avisos), "Avisos": list(avisos)}
+    val = htmlmod.escape(json.dumps(obj))
+    return f'<html><body><input type="hidden" name="json" value="{val}"></body></html>'
+
+
+def test_urls_categoria_usa_sitemap_si_es_xml():
+    # Si el sitemap de grupos sirve XML válido, se usa (atajo) y se IGNORA el
+    # historial: un sitemap que regresa es un atajo, no una rotura.
+    u = f"{BASE}/Portada/Indice/venta-casa-CUMBRES/966501"
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           f'<url><loc>{u}</loc></url></urlset>')
+    cliente = ClienteFixture({URL_GRUPOS: xml})
+    urls, fuente = urls_categoria(cliente, categorias_historicas={"venta-casa-VALLE"})
+    assert fuente == "sitemap" and urls == [u]
+
+
+def test_urls_categoria_cae_al_historial_si_html():
+    # Sitemap de grupos en HTML -> URLs construidas desde el historial (ordenadas),
+    # con el número placeholder cosmético.
+    cliente = ClienteFixture({URL_GRUPOS: _HTML_NO_XML})
+    urls, fuente = urls_categoria(
+        cliente, categorias_historicas={"venta-casa-VALLE", "renta-casa-VALLE"})
+    assert fuente == "historial"
+    assert urls == [_url_hist("renta-casa-VALLE"), _url_hist("venta-casa-VALLE")]
+
+
+def test_cosechar_indice_desde_historial_sin_sitemap():
+    # Camino Plan B completo: grupos en HTML -> cosecha por slug del historial.
+    slug = "venta-casa-VALLE"
+    cliente = ClienteFixture({URL_GRUPOS: _HTML_NO_XML, _url_hist(slug): P1})
+    res = cosechar_indice(cliente, categorias_historicas={slug})
+    assert res.fuente == "historial"
+    assert res.categorias_total == 1 and res.categorias_ok == {slug}
+    ids, _ = ids_categoria(P1)
+    assert set(res.registros) == set(ids)   # 1 GET trae TODO el catálogo
+
+
+def test_categoria_truncada_descubre_ids_pero_no_es_ok():
+    # El sitio corta K_Avisos a 500 en categorías enormes (Registros>len). Sus ids
+    # sirven para ALTAS, pero la categoría NO es 'ok' (no apta para bajas).
+    slug = "venta-casa-VALLE"
+    page = _pagina_categoria(registros=5, k_avisos=["11", "22", "33"])
+    cliente = ClienteFixture({URL_GRUPOS: _HTML_NO_XML, _url_hist(slug): page})
+    res = cosechar_indice(cliente, categorias_historicas={slug})
+    assert set(res.registros) == {"11", "22", "33"}   # descubiertos (altas)
+    assert res.categorias_ok == set()                  # truncada -> no apta para bajas
+
+
+# ---------------- orquestación con el sitemap caído (Plan B) ----------------
+def _sin_red(monkeypatch, tmp_path):
+    monkeypatch.setattr(evmod, "DIR_EVENTOS", tmp_path / "eventos")
+    monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: type("C", (), {
+        "cargar_robots": lambda self: None})())
+
+
+def _cae(*a, **k):
+    raise RuntimeError("el sitio sirvió HTML, no XML")
+
+
+def _idx_factory(idx):
+    return lambda c, cfg=None, categorias_historicas=None: idx
+
+
+def test_corrida_sin_sitemap_usa_indice(monkeypatch, tmp_path):
+    # Sitemap caído (HTML) -> el índice es la fuente principal: hay altas y la
+    # corrida NO aborta.
+    _sin_red(monkeypatch, tmp_path)
+    monkeypatch.setattr(runmod, "descargar_sitemap", _cae)
+    monkeypatch.setattr(runmod, "cosechar_indice", _idx_factory(_indice_completo()))
+    assert runmod.correr({"detalle": "nunca", "usar_indice": True}, fecha="2026-06-25") == 0
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    assert con.execute("SELECT COUNT(*) FROM avisos").fetchone()[0] == 5
+
+
+def test_corrida_aborta_si_sitemap_e_indice_caen(monkeypatch, tmp_path):
+    # Día 1: índice siembra 5 avisos. Día 2: sitemap caído Y el índice revienta ->
+    # nada descubierto -> exit 2 SIN tocar la bitácora (cero bajas).
+    _sin_red(monkeypatch, tmp_path)
+    monkeypatch.setattr(runmod, "descargar_sitemap", _cae)
+    monkeypatch.setattr(runmod, "cosechar_indice", _idx_factory(_indice_completo()))
+    assert runmod.correr({"detalle": "nunca", "usar_indice": True}, fecha="2026-06-25") == 0
+    monkeypatch.setattr(runmod, "cosechar_indice", _cae)
+    assert runmod.correr({"detalle": "nunca", "usar_indice": True}, fecha="2026-06-26") == 2
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    assert con.execute("SELECT COUNT(*) FROM avisos WHERE fecha_baja IS NOT NULL").fetchone()[0] == 0
+
+
+def test_no_baja_categoria_none_sin_sitemap(monkeypatch, tmp_path):
+    # Un aviso viejo SIN categoría (capturado solo por el sitemap). Con el sitemap
+    # caído NO debe darse de baja aunque no aparezca en el índice: sin el sitemap no
+    # podemos confirmar su "casa".
+    _sin_red(monkeypatch, tmp_path)
+    sitemap = [_entrada("32399000", "Se vende casa en CENTRO",
+                        "CENTRO - X 2 Recámaras $1,000,000")]
+    monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: sitemap)
+    monkeypatch.setattr(runmod, "cosechar_indice", _idx_factory(_indice_completo()))
+    assert runmod.correr({"detalle": "nunca", "usar_indice": True}, fecha="2026-06-25") == 0
+
+    monkeypatch.setattr(runmod, "descargar_sitemap", _cae)   # día 2: sitemap caído
+    monkeypatch.setattr(runmod, "cosechar_indice", _idx_factory(_indice_completo()))
+    assert runmod.correr({"detalle": "nunca", "usar_indice": True}, fecha="2026-06-26") == 0
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    assert con.execute("SELECT fecha_baja FROM avisos WHERE id_aviso='32399000'").fetchone()[0] is None

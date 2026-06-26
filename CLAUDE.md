@@ -9,44 +9,41 @@ respect robots.txt. Never commit the SQLite DB.
 
 ---
 
-## ⚠️ Estado actual (2026-06-24) — Plan B en curso
+## Estado actual (2026-06-25) — Plan B IMPLEMENTADO
 
-Los **sitemaps XML del sitio están caídos**: `sitemap_bienesraices.xml` (novedades)
-y `sitemap_grupos_bienesraices.xml` (grupos/índice) llevan **>12 h devolviendo una
-página HTML (HTTP 200), no XML**. Eso rompe el descubrimiento del scraper actual
-(depende de los sitemaps) y, por tanto, la corrida diaria. **Lo que SÍ funciona:**
-las páginas de índice (`/Portada/Indice/{slug}/{numero}` → JSON con `K_Avisos`) y
-las de detalle (`/Detalle/BienesRaices?Aviso={id}`).
+Los **sitemaps XML del sitio siguen caídos** (sirven HTML, HTTP 200, no XML desde
+2026-06-24): `sitemap_bienesraices.xml` (novedades) y `sitemap_grupos_bienesraices.xml`
+(grupos/índice). **Plan B ya está implementado** y el scraper corre de nuevo sin
+depender de ellos.
 
-➡️ **Plan B = reconstruir el descubrimiento sin sitemaps. El prompt para una sesión
-nueva está en [`docs/plan-b-scraper.md`](docs/plan-b-scraper.md).** Resumen: scraper
-*forward-only* que descubre ids por las páginas de índice (lista de categorías sacada
-de los enlaces del home y/o del historial) y captura cada aviso NUEVO desde su página
-de detalle. Sin backfill.
+**Cómo descubre ahora (`scraper/indice.urls_categoria`, resiliente):** intenta el
+sitemap de grupos; si sirve XML válido lo usa (atajo, se autocura solo); si sirve
+HTML, **construye las URLs de categoría desde los slugs del HISTORIAL** (la bitácora)
+con la forma `/Portada/Indice/{slug}/{n}`. Verificado en vivo (sonda 2026-06-25): el
+**`{n}` es COSMÉTICO** (solo cambia el `<title>`); quien rutea/filtra por zona+tipo es
+el **SLUG**. `run.py` ya no aborta cuando el sitemap está caído: el **índice es la
+fuente principal**, el sitemap de novedades es **opcional** (se usa si vuelve a servir
+XML). Captura forward-only: ids nuevos → detalle (`enriquecer_cola: todos`); avisos
+de página 1 se tipan/precian gratis desde los objetos ricos.
 
-Ya en `main` (listo para reusar): arreglo de **tipado** (código `K_Cla3` / título
-canónico manda sobre slug/título), **parser XML tolerante** y **aborto limpio**
-(exit 2) si el sitemap no es XML. Si los sitemaps **vuelven** a servir XML, la corrida
-actual se recupera sola (aborta en HTML, corre en XML); aun así Plan B debe quedar
-**resiliente** (usar el sitemap si está, caer a índice si no). **Pendiente** cuando
-vuelva el sitemap: re-captura para re-tipar lo ya almacenado.
+**Pendiente** cuando vuelva el sitemap: re-captura única para re-tipar lo ya
+almacenado (el arreglo de tipado solo corrige capturas nuevas).
 
 ---
 
 ## Next steps (start here)
 
-**El scraper está bloqueado por los sitemaps caídos — ver "Estado actual" arriba y
-`docs/plan-b-scraper.md`. Esa es LA tarea.** Lo de antes quedó hecho o sin efecto:
+Plan B está hecho y validado en `scrape.yml`. Posibles siguientes pasos:
 
-- ✅ **Price long-tail** — resuelto enriqueciendo la cola del índice con el detalle
-  (`enriquecer_cola: todos`).
-- ✅ **Mis-typing / built-as-`terreno`** — resuelto con la precedencia de tipo
-  estructurado (`K_Cla3` / título canónico del detalle > slug).
+- **Re-captura/re-tipado** de la línea base cuando el sitemap vuelva a servir XML
+  (ver Procedures). Hasta entonces el índice por historial mantiene la corrida diaria.
+- **Cobertura de categorías nuevas:** el descubrimiento por historial no ve zonas/tipos
+  que nunca hayan aparecido (el home **no** expone enlaces `/Portada/Indice/` — 0,
+  verificado). Si surge una categoría nueva, entra al historial en cuanto el sitemap
+  vuelva, o se puede sembrar a mano en la bitácora.
 - **NO reintentar Camino B (paginación POST de `/Portada/PostIndice`).** Descartado
-  tras **8 ciclos**: pagina por `firstRegs` (offset) pero el orden del servidor es
-  inestable → las páginas se traslapan y **no enumeran** la categoría (159/237 únicos
-  tras 11 páginas). El descubrimiento va por `K_Avisos` de la página 1 (trae TODOS
-  los ids de la categoría en un GET).
+  tras **8 ciclos**: pagina por `firstRegs` (offset) con orden inestable → no enumera.
+  El descubrimiento va por `K_Avisos` (trae TODOS los ids de la categoría en un GET).
 
 ---
 
@@ -56,9 +53,12 @@ vuelva el sitemap: re-captura para re-tipar lo ya almacenado.
 
 1. **Sitemap (novedades)** — `scraper/sitemap.py`. ~890 avisos in 1 request. For a
    new aviso *without* a caption it fetches its **detail page** (`detail_parser`).
-   ⚠️ **Caído (2026-06): el sitio devuelve HTML en esta URL; ver "Estado actual".**
-2. **Índice (full catalog)** — `scraper/indice.py`. ~2,200 avisos. Each category
-   page (`/Portada/Indice/{slug}/{numero}`) embeds an `<input name="json">` with
+   ⚠️ **OPCIONAL desde Plan B (2026-06): el sitio sirve HTML aquí. `run.py` lo
+   intenta y, si no es XML, sigue con el índice como fuente principal sin abortar.**
+2. **Índice (full catalog, fuente principal)** — `scraper/indice.py`. ~2,200 avisos.
+   La lista de categorías sale de `urls_categoria` (**resiliente**): el sitemap de
+   grupos si sirve XML, o los **slugs del historial** (`/Portada/Indice/{slug}/{n}`,
+   `n` cosmético) si no. Each category page embeds an `<input name="json">` with
    `K_Avisos` (all ids in the category) + `Avisos` (rich objects — price, areas,
    colonia — for **page 1 only**, ~23). **One GET per category; no pagination.**
 
@@ -86,9 +86,20 @@ listings only**) via `analytics.py`.
     learns code→label by **majority vote across all categories** (contamination is
     the minority, so the vote recovers the true meaning).
   - `ZonMun` = clean zona string.
-- **Category coverage is keyed by SLUG**, not the URL number. The number is a
-  *type id shared across zones* (`966501` = venta-casa in every zone); keying by it
-  collapses coverage and suppresses bajas.
+- **Category coverage is keyed by SLUG**, not the URL number. **El número de la URL
+  es COSMÉTICO** (verificado en vivo 2026-06-25): `/Portada/Indice/{slug}/{n}` con
+  `n` ∈ {966501, 1, 0, …} devuelve el MISMO `K_Avisos`; `n` solo cambia el `<title>`.
+  Quien rutea/filtra por **zona+tipo es el SLUG**. El segmento `{n}` sí es
+  estructuralmente obligatorio (sin él → PageNotFound), pero su valor da igual
+  (`indice.NUM_CATEGORIA_PLACEHOLDER`). Por eso el descubrimiento por historial usa
+  los slugs con un número placeholder.
+- **`K_Avisos` se trunca a 500** en categorías enormes (p. ej. un slug sin zona:
+  `Registros`>`len(K_Avisos)`). `cosechar_indice` detecta el truncamiento
+  (`len(kav) < total`) y NO marca esa categoría como completa: sus ids sirven para
+  altas, pero no se usan para bajas. Los slugs **por zona** quedan bajo el tope.
+- **El home NO expone enlaces de categoría** (`/Portada/Indice/…`): 0 en `/`,
+  `/Portada/BienesRaices`, `/BienesRaices` (verificado). La única fuente de slugs sin
+  el sitemap de grupos es el **historial** (la bitácora).
 - **`m²` rendering:** detail pages use plain `m2` (so `detail_parser`/`atributos`
   work); category cards use `m<sup>2</sup>` — but índice reads the JSON, not text.
 - **Tests assert INVARIANTS** against real fixtures, which `calibrate.py`
@@ -117,13 +128,18 @@ listings only**) via `analytics.py`.
 
 ## Current state
 
-`main` tiene: tipado por `K_Cla3` + **precedencia estructurada** (tipo del código/
-detalle > slug/título), enriquecimiento de la cola por detalle
-(`enriquecer_cola: todos`), métricas **$/m² por tipo de inmueble**, **parser XML
-tolerante** y **aborto limpio** (exit 2) si el sitemap no es XML. **50 pruebas en
-verde.** Línea base ~2,200 avisos.
+**Plan B implementado.** El descubrimiento ya no depende de los sitemaps XML
+(`urls_categoria`: sitemap de grupos si sirve XML, slugs del historial si no; número
+de URL cosmético, el slug rutea). `run.py` trata el sitemap de novedades como
+**opcional** y el índice como **fuente principal**; aborta limpio (exit 2) solo si NI
+sitemap NI índice arrojan avisos. Guardas nuevas: **truncamiento a 500** (categoría no
+apta para bajas si `K_Avisos` viene cortado) y **protección de `categoria=None`** (las
+capturas viejas solo-sitemap no se dan de baja sin sitemap). Reúso total del resto
+(detalle, `K_Cla3`, cola, db/eventos, tablero). **57 pruebas en verde.** Línea base
+~2,200 avisos.
 
-**Bloqueante:** los sitemaps XML del sitio sirven HTML (no XML) desde 2026-06-24 →
-el scraper y la corrida diaria están caídos. La tarea es **Plan B**
-(`docs/plan-b-scraper.md`). La re-captura para re-tipar lo ya almacenado queda
-pendiente hasta que el sitio vuelva a servir el sitemap.
+Lo previo sigue vigente: tipado por `K_Cla3` + precedencia estructurada,
+`enriquecer_cola: todos`, métricas $/m² por tipo, parser XML tolerante.
+
+**Pendiente:** re-captura para re-tipar lo ya almacenado, cuando el sitio vuelva a
+servir el sitemap (self-heal del descubrimiento; ver Procedures).

@@ -98,7 +98,8 @@ def _correr(monkeypatch, tmp_path, idx, cfg):
     cliente = _ClienteDetalle(_detalle_html(zona="VALLE", colonia="LOS ROBLES"))
     monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: cliente)
     monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: _sitemap_dummy())
-    monkeypatch.setattr(runmod, "cosechar_indice", lambda c, cfg=None: idx)
+    monkeypatch.setattr(runmod, "cosechar_indice",
+                        lambda c, cfg=None, categorias_historicas=None: idx)
     codigo = runmod.correr(cfg, fecha="2026-06-20")
     return codigo, cliente
 

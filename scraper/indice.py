@@ -77,6 +77,38 @@ def descargar_grupos(cliente) -> list[str]:
     return _parsear_grupos(r.text)
 
 
+# Número de categoría PLACEHOLDER para las URLs construidas desde el historial.
+# Verificado en vivo (sonda 2026-06-25): el número de /Portada/Indice/{slug}/{n}
+# es COSMÉTICO —solo cambia el <title> decorativo—; quien RUTEA (y filtra por
+# zona+tipo) es el SLUG. Cualquier número entero sirve; el segmento sí es
+# estructuralmente obligatorio (sin él, el sitio redirige a PageNotFound).
+NUM_CATEGORIA_PLACEHOLDER = "1"
+
+
+def urls_categoria(cliente, categorias_historicas=None) -> tuple[list[str], str]:
+    """URLs de página de categoría, RESILIENTE al sitemap de grupos (caído desde
+    2026-06: sirve HTML, no XML).
+
+    Devuelve (urls, fuente). Estrategia, decidida por lo que el sitio DEVUELVE en
+    cada corrida (no por una bandera fija), para que un sitemap que regresa sea un
+    atajo y no una rotura:
+      1) Intenta el sitemap de grupos. Si parsea como XML válido y trae URLs, úsalo
+         (atajo histórico; pocas requests; se autocura solo cuando el sitio vuelve).
+      2) Si no (HTML/redirección/corrupto), construye las URLs desde los slugs de
+         categoría del HISTORIAL: `/Portada/Indice/{slug}/{placeholder}`. El slug
+         rutea, así que el número placeholder basta.
+    """
+    try:
+        urls = descargar_grupos(cliente)   # _parsear_grupos revienta si es HTML
+        if urls:
+            return urls, "sitemap"
+    except Exception:
+        pass  # el sitemap no sirvió XML; caemos al historial
+    urls = [f"{BASE}/Portada/Indice/{slug}/{NUM_CATEGORIA_PLACEHOLDER}"
+            for slug in sorted(categorias_historicas or ())]
+    return urls, "historial"
+
+
 # ------------------------------ slug -------------------------------------
 def partes_categoria(url: str) -> tuple[str, str]:
     """('venta-casa-CUMBRES', '966501') a partir de la URL de categoría."""
@@ -268,6 +300,7 @@ class ResultadoIndice:
     categorias_total: int = 0
     paginas_ok: int = 0
     paginas_total: int = 0
+    fuente: str = "sitemap"   # de dónde salieron las categorías: sitemap | historial
 
     @property
     def cobertura(self) -> float:
@@ -315,20 +348,28 @@ def aprender_clasificacion(paginas) -> Clasificacion:
     )
 
 
-def cosechar_indice(cliente, cfg: dict | None = None) -> ResultadoIndice:
+def cosechar_indice(cliente, cfg: dict | None = None,
+                    categorias_historicas=None) -> ResultadoIndice:
     """Recorre TODAS las categorías (1 GET c/u) y devuelve registros deduplicados.
+
+    La lista de categorías sale de `urls_categoria` (resiliente: sitemap de grupos
+    si sirve XML; si no, los slugs del historial). `categorias_historicas` es el
+    conjunto de slugs ya vistos (lo arma run.py desde la bitácora) y solo se usa en
+    el camino de respaldo.
 
     Dos pasadas: primero descarga todas las páginas y aprende el mapa de códigos
     de clasificación (para no fiarse del slug de cada página, que mezcla tipos);
     luego construye los registros tipando cada aviso rico por SU propio código.
 
-    Una categoría cuenta como 'ok' si su página se leyó y entregó el JSON con
-    `K_Avisos`; como ese JSON ya trae el catálogo COMPLETO de la categoría, run.py
-    puede decidir con seguridad qué avisos ausentes dar de baja.
+    Una categoría cuenta como 'ok' (COMPLETA, apta para bajas) si su página entregó
+    el JSON y `K_Avisos` NO viene truncado. El sitio corta `K_Avisos` a 500 en
+    categorías enormes (Registros>len(K_Avisos)): sus ids sirven para ALTAS, pero no
+    para dar de baja (no sabemos cuáles faltan), así que esa categoría no es 'ok'.
     """
     res = ResultadoIndice()
     paginas: list[tuple] = []   # (slug, trans, tipo, zona, k_avisos, avisos_ricos)
-    for url_cat in descargar_grupos(cliente):
+    urls, res.fuente = urls_categoria(cliente, categorias_historicas)
+    for url_cat in urls:
         slug, _numero = partes_categoria(url_cat)
         trans, tipo, zona = partes_slug(slug)
         res.categorias_total += 1
@@ -341,9 +382,12 @@ def cosechar_indice(cliente, cfg: dict | None = None) -> ResultadoIndice:
         if not data:
             continue
         res.paginas_ok += 1
-        res.categorias_ok.add(slug)
         avisos = [o for o in data.get("Avisos", []) if isinstance(o, dict) and o.get("K_Av")]
         kav = [str(x) for x in data.get("K_Avisos", [])]
+        total = data.get("Registros")
+        total = int(total) if isinstance(total, int) else len(kav)
+        if len(kav) >= total:          # completa (no truncada) -> apta para bajas
+            res.categorias_ok.add(slug)
         paginas.append((slug, trans, tipo, zona, kav, avisos))
 
     clasif = aprender_clasificacion((t, tp, av) for _, t, tp, _, _, av in paginas)
