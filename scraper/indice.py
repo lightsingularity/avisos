@@ -44,6 +44,7 @@ import re
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .caption_parser import _TIPOS
 from .http_polite import BASE
@@ -84,6 +85,21 @@ def descargar_grupos(cliente) -> list[str]:
 # estructuralmente obligatorio (sin él, el sitio redirige a PageNotFound).
 NUM_CATEGORIA_PLACEHOLDER = "1"
 
+# Semilla de categorías: respaldo de descubrimiento cuando el log está VACÍO (una
+# re-captura desde cero o un clon nuevo) y el sitemap de grupos sigue caído. Sin
+# esto no habría de dónde sacar las categorías y la corrida abortaría. Versionada
+# en data/ (un slug por línea); se regenera con los slugs distintos del log.
+RUTA_SEMILLA = Path(__file__).resolve().parent.parent / "data" / "categorias_semilla.txt"
+
+
+def _leer_semilla() -> set[str]:
+    """Slugs de categoría semilla. '#' comenta; sin archivo -> conjunto vacío."""
+    try:
+        lineas = RUTA_SEMILLA.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+    return {s.strip() for s in lineas if s.strip() and not s.strip().startswith("#")}
+
 
 def urls_categoria(cliente, categorias_historicas=None) -> tuple[list[str], str]:
     """URLs de página de categoría, RESILIENTE al sitemap de grupos (caído desde
@@ -95,18 +111,25 @@ def urls_categoria(cliente, categorias_historicas=None) -> tuple[list[str], str]
       1) Intenta el sitemap de grupos. Si parsea como XML válido y trae URLs, úsalo
          (atajo histórico; pocas requests; se autocura solo cuando el sitio vuelve).
       2) Si no (HTML/redirección/corrupto), construye las URLs desde los slugs de
-         categoría del HISTORIAL: `/Portada/Indice/{slug}/{placeholder}`. El slug
-         rutea, así que el número placeholder basta.
+         categoría del HISTORIAL (la bitácora): `/Portada/Indice/{slug}/{placeholder}`.
+         El slug rutea, así que el número placeholder basta.
+      3) Si el HISTORIAL está vacío (re-captura desde cero / clon nuevo), cae a la
+         SEMILLA versionada. Así el descubrimiento nunca depende al 100% del log.
     """
     try:
         urls = descargar_grupos(cliente)   # _parsear_grupos revienta si es HTML
         if urls:
             return urls, "sitemap"
     except Exception:
-        pass  # el sitemap no sirvió XML; caemos al historial
+        pass  # el sitemap no sirvió XML; caemos al historial/semilla
+    categorias = set(categorias_historicas or ())
+    fuente = "historial"
+    if not categorias:                     # log vacío -> respaldo por semilla
+        categorias = _leer_semilla()
+        fuente = "semilla"
     urls = [f"{BASE}/Portada/Indice/{slug}/{NUM_CATEGORIA_PLACEHOLDER}"
-            for slug in sorted(categorias_historicas or ())]
-    return urls, "historial"
+            for slug in sorted(categorias)]
+    return urls, fuente
 
 
 # ------------------------------ slug -------------------------------------

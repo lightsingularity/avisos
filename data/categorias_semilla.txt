@@ -1,0 +1,64 @@
+# Slugs de categoría SEMILLA para el descubrimiento (Plan B).
+# Respaldo cuando el log está vacío (re-captura / clon nuevo) y el sitemap
+# de grupos sigue caído: sin esto no habría categorías que consultar.
+# El número de la URL es cosmético; basta el slug. Un slug por línea.
+# Regenerar con: distinct datos.categoria de data/eventos/*.jsonl.
+renta-bodega-nave-industrial-APODACA
+renta-bodega-nave-industrial-CENTRO
+renta-bodega-nave-industrial-CUMBRES
+renta-bodega-nave-industrial-GUADALUPE
+renta-bodega-nave-industrial-SANTA-CATARINA
+renta-casa-APODACA
+renta-casa-CARRETERA-NACIONAL
+renta-casa-CONTRY
+renta-casa-CUMBRES
+renta-casa-GARCIA
+renta-casa-GRAL.-ESCOBEDO
+renta-casa-GUADALUPE
+renta-casa-SAN-NICOLAS-DE-LOS-GARZA
+renta-casa-VALLE
+renta-departamento-CARRETERA-NACIONAL
+renta-departamento-CENTRO
+renta-departamento-CONTRY
+renta-departamento-CUMBRES
+renta-departamento-GUADALUPE
+renta-departamento-SAN-NICOLAS-DE-LOS-GARZA
+renta-departamento-SANTA-CATARINA
+renta-departamento-VALLE
+renta-local-oficina-CENTRO
+renta-local-oficina-CONTRY
+renta-local-oficina-CUMBRES
+renta-local-oficina-VALLE
+renta-terreno-APODACA
+traspaso-negocio-
+venta-bodega-nave-industrial-CENTRO
+venta-casa-APODACA
+venta-casa-CARRETERA-NACIONAL
+venta-casa-CENTRO
+venta-casa-CONTRY
+venta-casa-CUMBRES
+venta-casa-GARCIA
+venta-casa-GRAL.-ESCOBEDO
+venta-casa-GUADALUPE
+venta-casa-SAN-NICOLAS-DE-LOS-GARZA
+venta-casa-SANTA-CATARINA
+venta-casa-VALLE
+venta-departamento-CENTRO
+venta-departamento-CONTRY
+venta-departamento-CUMBRES
+venta-departamento-GUADALUPE
+venta-departamento-SANTA-CATARINA
+venta-departamento-VALLE
+venta-finca-campestre-CARRETERA-NACIONAL
+venta-local-oficina-CENTRO
+venta-local-oficina-CUMBRES
+venta-local-oficina-VALLE
+venta-terreno-APODACA
+venta-terreno-CADEREYTA-JIMENEZ
+venta-terreno-CARRETERA-NACIONAL
+venta-terreno-CENTRO
+venta-terreno-CONTRY
+venta-terreno-CUMBRES
+venta-terreno-GARCIA
+venta-terreno-SANTA-CATARINA
+venta-terreno-VALLE

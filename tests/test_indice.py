@@ -535,6 +535,27 @@ def test_urls_categoria_cae_al_historial_si_html():
     assert urls == [_url_hist("renta-casa-VALLE"), _url_hist("venta-casa-VALLE")]
 
 
+def test_urls_categoria_usa_semilla_si_historial_vacio(monkeypatch, tmp_path):
+    # Log VACÍO (re-captura desde cero / clon nuevo) + grupos en HTML -> el
+    # descubrimiento cae a la SEMILLA versionada, no se queda sin categorías.
+    import scraper.indice as indicemod
+    semilla = tmp_path / "categorias_semilla.txt"
+    semilla.write_text("# cab\nventa-casa-VALLE\nrenta-casa-VALLE\n", encoding="utf-8")
+    monkeypatch.setattr(indicemod, "RUTA_SEMILLA", semilla)
+    cliente = ClienteFixture({URL_GRUPOS: _HTML_NO_XML})
+    urls, fuente = urls_categoria(cliente, categorias_historicas=set())
+    assert fuente == "semilla"
+    assert urls == [_url_hist("renta-casa-VALLE"), _url_hist("venta-casa-VALLE")]
+
+
+def test_leer_semilla_ignora_comentarios_y_vacias(monkeypatch, tmp_path):
+    import scraper.indice as indicemod
+    semilla = tmp_path / "s.txt"
+    semilla.write_text("# cab\nventa-casa-VALLE\n\n  renta-casa-VALLE  \n", encoding="utf-8")
+    monkeypatch.setattr(indicemod, "RUTA_SEMILLA", semilla)
+    assert indicemod._leer_semilla() == {"venta-casa-VALLE", "renta-casa-VALLE"}
+
+
 def test_cosechar_indice_desde_historial_sin_sitemap():
     # Camino Plan B completo: grupos en HTML -> cosecha por slug del historial.
     slug = "venta-casa-VALLE"
