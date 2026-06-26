@@ -21,13 +21,18 @@ sitemap de grupos; si sirve XML válido lo usa (atajo, se autocura solo); si sir
 HTML, **construye las URLs de categoría desde los slugs del HISTORIAL** (la bitácora)
 con la forma `/Portada/Indice/{slug}/{n}`. Verificado en vivo (sonda 2026-06-25): el
 **`{n}` es COSMÉTICO** (solo cambia el `<title>`); quien rutea/filtra por zona+tipo es
-el **SLUG**. `run.py` ya no aborta cuando el sitemap está caído: el **índice es la
+el **SLUG**. Si el historial está vacío (re-captura desde cero / clon nuevo), cae a la
+**SEMILLA** versionada (`data/categorias_semilla.txt`, 59 slugs) para no quedarse sin
+categorías. `run.py` ya no aborta cuando el sitemap está caído: el **índice es la
 fuente principal**, el sitemap de novedades es **opcional** (se usa si vuelve a servir
 XML). Captura forward-only: ids nuevos → detalle (`enriquecer_cola: todos`); avisos
 de página 1 se tipan/precian gratis desde los objetos ricos.
 
-**Pendiente** cuando vuelva el sitemap: re-captura única para re-tipar lo ya
-almacenado (el arreglo de tipado solo corrige capturas nuevas).
+**Línea base re-capturada limpia (2026-06-25) vía Plan B + semilla** —ya NO esperó al
+sitemap—: ~2,215 avisos, tipado por `K_Cla3`, 97 % con precio. El ruido legacy (mal
+tipados, precios stale/placeholder) se eliminó; lo que queda (2 terrenos con
+construcción por su propio `K_Cla3`, ~17 precios placeholder) es del ORIGEN, no de la
+captura.
 
 ---
 
@@ -122,7 +127,11 @@ listings only**) via `analytics.py`.
 - **Re-capture the baseline** (after a parser fix, to correct already-stored data):
   on a branch, `git rm data/eventos/2026-06.jsonl`, commit, push; dispatch
   `scrape.yml` on the branch; open a PR and merge (take the branch's version if it
-  conflicts with main's daily data commits).
+  conflicts with main's daily data commits). **Con el sitemap caído, el
+  descubrimiento del log vacío arranca desde `data/categorias_semilla.txt`** (la
+  semilla); regenérala con los slugs distintos del log si añades categorías. La
+  re-captura completa visita el detalle de toda la cola (~24 min, bajo el timeout de
+  30; los eventos se anexan al final, así que un timeout no deja datos a medias).
 - **Config** (`config.yaml`): `usar_indice`, `detalle: nunca|faltantes|todos`,
   `indice.umbral_cobertura`, `seg_entre_solicitudes`.
 
@@ -134,12 +143,15 @@ de URL cosmético, el slug rutea). `run.py` trata el sitemap de novedades como
 **opcional** y el índice como **fuente principal**; aborta limpio (exit 2) solo si NI
 sitemap NI índice arrojan avisos. Guardas nuevas: **truncamiento a 500** (categoría no
 apta para bajas si `K_Avisos` viene cortado) y **protección de `categoria=None`** (las
-capturas viejas solo-sitemap no se dan de baja sin sitemap). Reúso total del resto
-(detalle, `K_Cla3`, cola, db/eventos, tablero). **57 pruebas en verde.** Línea base
-~2,200 avisos.
+capturas viejas solo-sitemap no se dan de baja sin sitemap). Cuando el log está vacío,
+el descubrimiento cae a la **semilla** (`data/categorias_semilla.txt`) y no depende al
+100 % del log. Reúso total del resto (detalle, `K_Cla3`, cola, db/eventos, tablero).
+**59 pruebas en verde.** Línea base **re-capturada limpia** (~2,215 avisos, 97 % con
+precio) vía Plan B + semilla, sin esperar al sitemap.
 
 Lo previo sigue vigente: tipado por `K_Cla3` + precedencia estructurada,
 `enriquecer_cola: todos`, métricas $/m² por tipo, parser XML tolerante.
 
-**Pendiente:** re-captura para re-tipar lo ya almacenado, cuando el sitio vuelva a
-servir el sitemap (self-heal del descubrimiento; ver Procedures).
+**Hecho:** la re-captura para re-tipar/re-preciar la línea base ya se ejecutó (vía
+Plan B + semilla, sin sitemap). **Pendiente (menor):** cuando el sitemap vuelva a
+servir XML, el descubrimiento lo retoma solo como atajo (self-heal, sin tocar código).

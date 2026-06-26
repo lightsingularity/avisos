@@ -6,9 +6,10 @@
 > del **historial** si no) y la orquestación en `run.py` (sitemap **opcional**, índice
 > como fuente principal). Hallazgo clave de la sonda en vivo: el **número de la URL es
 > COSMÉTICO**, el **slug rutea** (`NUM_CATEGORIA_PLACEHOLDER`). Guardas: truncamiento a
-> 500 y protección de `categoria=None`. **57 pruebas en verde.** El doc se conserva
-> como registro del diseño y del razonamiento. Pendiente: re-captura/re-tipado cuando
-> el sitemap vuelva (el descubrimiento se autocura solo).
+> 500 y protección de `categoria=None`. Si el log está vacío (re-captura / clon nuevo)
+> el descubrimiento cae a una **semilla** versionada de slugs. **59 pruebas en verde.**
+> La **línea base ya se re-capturó limpia** vía Plan B + semilla (sin esperar al
+> sitemap). El doc se conserva como registro del diseño y del razonamiento.
 
 **Cómo usar:** abre una sesión NUEVA de Claude Code en este repo y pásale el
 prompt de abajo (o dile "lee `docs/plan-b-scraper.md` y ejecútalo"). Se diseñó
