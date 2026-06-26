@@ -197,3 +197,47 @@ def test_guarda_aborta_ante_colapso(monkeypatch, tmp_path):
 def test_guarda_aborta_sitemap_vacio(monkeypatch, tmp_path):
     assert _simular_dia(monkeypatch, tmp_path, [_entrada("1", *CASA)], "2026-06-12") == 0
     assert _simular_dia(monkeypatch, tmp_path, [], "2026-06-13") == 2
+
+
+# ------------------ filtro de precios placeholder ------------------
+# El sitio sirve precios basura para algunos avisos ("a consultar" como $4, $450).
+# La bitácora los conserva, pero la base derivada NO los registra: no son precios.
+def test_precio_valido_pisos():
+    assert dbmod.precio_valido(4, "total", "venta") is False
+    assert dbmod.precio_valido(100_000, "total", "venta") is True
+    assert dbmod.precio_valido(460, "total", "renta") is False
+    assert dbmod.precio_valido(1_800, "total", "renta") is True
+    assert dbmod.precio_valido(600, "total", "traspaso") is False
+    assert dbmod.precio_valido(980, "m2", "venta") is True      # por m²: otra escala
+    assert dbmod.precio_valido(None, "total", "venta") is True  # sin precio: nada que filtrar
+
+
+def test_precio_placeholder_no_entra_a_analisis(tmp_path):
+    def _alta(idv, precio, trans="venta"):
+        return {"e": "alta", "f": "2026-06-25", "id": idv,
+                "datos": {"tipo_transaccion": trans, "tipo_inmueble": "casa",
+                          "precio": precio, "precio_unidad": "total",
+                          "url": f"http://x/{idv}"}, "fotos": []}
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([_alta("1", 50), _alta("2", 2_000_000)], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    # Ambos avisos existen; solo el de precio real entra a la vista 'analisis'.
+    assert con.execute("SELECT COUNT(*) FROM avisos").fetchone()[0] == 2
+    assert {r[0] for r in con.execute("SELECT id_aviso FROM analisis")} == {"2"}
+    assert con.execute(
+        "SELECT COUNT(*) FROM historial_precios WHERE id_aviso='1'").fetchone()[0] == 0
+
+
+def test_precio_placeholder_luego_real_si_aparece(tmp_path):
+    # Alta con placeholder y, después, un cambio a precio real: el aviso entra al
+    # tablero solo cuando llega el precio válido.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([
+        {"e": "alta", "f": "2026-06-25", "id": "9",
+         "datos": {"tipo_transaccion": "venta", "tipo_inmueble": "casa",
+                   "precio": 4, "precio_unidad": "total", "url": "http://x/9"}, "fotos": []},
+        {"e": "precio", "f": "2026-06-26", "id": "9", "precio": 3_500_000, "unidad": "total"},
+    ], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    fila = con.execute("SELECT precio_actual FROM analisis WHERE id_aviso='9'").fetchone()
+    assert fila == (3_500_000,)   # el placeholder se ignoró; el real sí entró

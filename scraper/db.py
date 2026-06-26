@@ -19,6 +19,23 @@ RUTA_DB = Path(__file__).resolve().parent.parent / "data" / "avisos.db"
 TIPOS_CONSTRUCCION = frozenset({"casa", "departamento", "local_oficina", "edificio"})
 TIPOS_TERRENO = frozenset({"terreno", "finca_campestre", "rancho"})
 
+# Pisos de plausibilidad del precio TOTAL (MXN), por transacción. Por debajo es un
+# PLACEHOLDER del sitio ("precio a consultar" / error de captura del anunciante), no
+# un precio real (p. ej. local en venta $4, terreno $450): no debe entrar a la base
+# derivada ni, por tanto, al tablero. La bitácora lo conserva tal cual (es la fuente
+# de verdad); esto solo filtra la SQLite reconstruida y es ajustable aquí.
+PISO_PRECIO_TOTAL = {"venta": 100_000, "traspaso": 10_000, "renta": 1_000}
+
+
+def precio_valido(precio, unidad, transaccion) -> bool:
+    """False si un precio 'total' cae por debajo del piso de su transacción (un
+    placeholder implausible). Los precios por m² (terrenos) usan otra escala y no se
+    filtran aquí; un precio nulo se deja pasar (no hay nada que registrar)."""
+    if unidad != "total" or precio is None:
+        return True
+    piso = PISO_PRECIO_TOTAL.get(transaccion)
+    return piso is None or precio >= piso
+
 
 def _sql_lista(valores) -> str:
     """{'a', 'b'} -> "'a', 'b'" para una cláusula IN de SQLite."""
@@ -130,7 +147,8 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
                 VALUES (?{', ?' * len(_CAMPOS_AVISO)}, ?, ?, NULL)""",
             [ev["id"]] + [d.get(c) for c in _CAMPOS_AVISO] + [f, f],
         )
-        if "precio" in d:
+        if "precio" in d and precio_valido(
+                d["precio"], d.get("precio_unidad", "total"), d.get("tipo_transaccion")):
             con.execute(
                 "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
                 (ev["id"], f, d["precio"], d.get("precio_unidad", "total")),
@@ -141,10 +159,13 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
                 (ev["id"], u, i),
             )
     elif e == "precio":
-        con.execute(
-            "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
-            (ev["id"], f, ev["precio"], ev.get("unidad", "total")),
-        )
+        fila = con.execute(
+            "SELECT tipo_transaccion FROM avisos WHERE id_aviso=?", (ev["id"],)).fetchone()
+        if precio_valido(ev["precio"], ev.get("unidad", "total"), fila[0] if fila else None):
+            con.execute(
+                "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
+                (ev["id"], f, ev["precio"], ev.get("unidad", "total")),
+            )
         con.execute("UPDATE avisos SET fecha_ultima_vista=? WHERE id_aviso=?", (f, ev["id"]))
     elif e == "baja":
         con.execute("UPDATE avisos SET fecha_baja=? WHERE id_aviso=?", (f, ev["id"]))

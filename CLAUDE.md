@@ -110,6 +110,12 @@ listings only**) via `analytics.py`.
 - **Tests assert INVARIANTS** against real fixtures, which `calibrate.py`
   overwrites each run. Don't pin exact counts/ids (`tests/test_indice.py`).
 - **USD listings:** price omitted (no currency column); MXN only.
+- **Precios placeholder:** el sitio sirve precios basura cuando el anunciante deja el
+  precio "a consultar" (venta $4, terreno $450…). `db.precio_valido` los descarta al
+  reconstruir la SQLite (pisos del precio TOTAL por transacción: venta ≥ $100k,
+  traspaso ≥ $10k, renta ≥ $1k; por m² no se filtra). La **bitácora los conserva**
+  (fuente de verdad, fiel al sitio); solo la **base derivada** los omite, así que no
+  llegan al tablero. Ajustable en `PISO_PRECIO_TOTAL`.
 
 ---
 
