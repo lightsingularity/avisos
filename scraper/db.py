@@ -37,6 +37,22 @@ def precio_valido(precio, unidad, transaccion) -> bool:
     return piso is None or precio >= piso
 
 
+# Techo de plausibilidad del precio POR m² (MXN/m²). El sitio a veces mete el precio
+# TOTAL en el campo de "precio por m²" (verificado: p. ej. un terreno con "$7,500,000
+# por m²" que en realidad vale $7.5M totales a $7,500/m²). Ningún suelo cuesta
+# $100,000/m², así que por encima de este techo NO es un precio por m² real sino un
+# total mal etiquetado: lo reinterpretamos como 'total' (la vista ya saca $/m² =
+# total / m2_terreno). Ajustable aquí; la bitácora conserva la unidad original.
+TECHO_PRECIO_M2 = 100_000
+
+
+def normalizar_unidad(precio, unidad):
+    """Reinterpreta un 'precio por m²' implausiblemente alto como precio total."""
+    if unidad == "m2" and precio is not None and precio > TECHO_PRECIO_M2:
+        return precio, "total"
+    return precio, unidad
+
+
 def _sql_lista(valores) -> str:
     """{'a', 'b'} -> "'a', 'b'" para una cláusula IN de SQLite."""
     return ", ".join(f"'{v}'" for v in sorted(valores))
@@ -147,12 +163,13 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
                 VALUES (?{', ?' * len(_CAMPOS_AVISO)}, ?, ?, NULL)""",
             [ev["id"]] + [d.get(c) for c in _CAMPOS_AVISO] + [f, f],
         )
-        if "precio" in d and precio_valido(
-                d["precio"], d.get("precio_unidad", "total"), d.get("tipo_transaccion")):
-            con.execute(
-                "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
-                (ev["id"], f, d["precio"], d.get("precio_unidad", "total")),
-            )
+        if "precio" in d:
+            precio, unidad = normalizar_unidad(d["precio"], d.get("precio_unidad", "total"))
+            if precio_valido(precio, unidad, d.get("tipo_transaccion")):
+                con.execute(
+                    "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
+                    (ev["id"], f, precio, unidad),
+                )
         for i, u in enumerate(ev.get("fotos", []), start=1):
             con.execute(
                 "INSERT OR IGNORE INTO fotos (id_aviso, url_foto, orden) VALUES (?,?,?)",
@@ -161,10 +178,11 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
     elif e == "precio":
         fila = con.execute(
             "SELECT tipo_transaccion FROM avisos WHERE id_aviso=?", (ev["id"],)).fetchone()
-        if precio_valido(ev["precio"], ev.get("unidad", "total"), fila[0] if fila else None):
+        precio, unidad = normalizar_unidad(ev["precio"], ev.get("unidad", "total"))
+        if precio_valido(precio, unidad, fila[0] if fila else None):
             con.execute(
                 "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
-                (ev["id"], f, ev["precio"], ev.get("unidad", "total")),
+                (ev["id"], f, precio, unidad),
             )
         con.execute("UPDATE avisos SET fecha_ultima_vista=? WHERE id_aviso=?", (f, ev["id"]))
     elif e == "baja":

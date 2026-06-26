@@ -241,3 +241,27 @@ def test_precio_placeholder_luego_real_si_aparece(tmp_path):
     con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
     fila = con.execute("SELECT precio_actual FROM analisis WHERE id_aviso='9'").fetchone()
     assert fila == (3_500_000,)   # el placeholder se ignoró; el real sí entró
+
+
+# ---------- precio 'por m²' mal etiquetado (en realidad un total) ----------
+def test_normaliza_precio_m2_alto_a_total():
+    # El sitio mete el TOTAL en el campo de "precio por m²" ($7.5M/m²): se
+    # reinterpreta como total. Un precio por m² real (bajo) se respeta.
+    assert dbmod.normalizar_unidad(7_500_000, "m2") == (7_500_000, "total")
+    assert dbmod.normalizar_unidad(17_500, "m2") == (17_500, "m2")       # per-m² real
+    assert dbmod.normalizar_unidad(5_000_000, "total") == (5_000_000, "total")
+
+
+def test_terreno_m2_mal_etiquetado_da_m2_correcto(tmp_path):
+    # Terreno con "precio por m²" = total (7.5M) y 1000 m²: la vista debe dar
+    # $/m² = 7,500 (reinterpretado a total), no 7,500,000.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([{
+        "e": "alta", "f": "2026-06-25", "id": "7",
+        "datos": {"tipo_transaccion": "venta", "tipo_inmueble": "terreno",
+                  "precio": 7_500_000, "precio_unidad": "m2", "m2_terreno": 1000.0,
+                  "url": "http://x/7"}, "fotos": []}], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    r = con.execute("SELECT precio_actual, precio_unidad, precio_m2_terreno "
+                    "FROM analisis WHERE id_aviso='7'").fetchone()
+    assert r[0] == 7_500_000 and r[1] == "total" and r[2] == 7500

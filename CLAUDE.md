@@ -116,6 +116,12 @@ listings only**) via `analytics.py`.
   traspaso ≥ $10k, renta ≥ $1k; por m² no se filtra). La **bitácora los conserva**
   (fuente de verdad, fiel al sitio); solo la **base derivada** los omite, así que no
   llegan al tablero. Ajustable en `PISO_PRECIO_TOTAL`.
+- **Precio por m² mal etiquetado:** el sitio a veces mete el TOTAL en el campo de
+  "precio por m²" (un terreno con "$7,500,000/m²" que en realidad vale $7.5M a
+  $7,500/m²). `db.normalizar_unidad` reinterpreta como `total` cualquier `m2` por
+  encima de `TECHO_PRECIO_M2` ($100k/m², imposible para suelo) al reconstruir; la
+  vista ya saca $/m² = total / m2_terreno. (Aparte, hay terrenos con `m2_terreno`
+  mal capturado —p. ej. 8 m²— que inflan su $/m²; es captura del ÁREA, no del precio.)
 
 ---
 
