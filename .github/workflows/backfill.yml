@@ -1,0 +1,58 @@
+name: Backfill de descripciones (manual)
+
+# Backfill ÚNICO y resumible: visita el detalle de cada aviso activo sin
+# descripción y anexa eventos `desc`. Re-despachar hasta que no quede cola
+# (el script imprime cuántos pendientes restan). Ver backfill_descripciones.py.
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutos:
+        description: "Presupuesto de minutos antes de cortar limpio"
+        required: false
+        default: "50"
+      max:
+        description: "Tope de avisos a procesar (0 = sin tope)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Correr backfill
+        env:
+          BACKFILL_MIN: ${{ github.event.inputs.minutos }}
+          BACKFILL_MAX: ${{ github.event.inputs.max }}
+        run: python backfill_descripciones.py
+
+      - name: Confirmar descripciones nuevas
+        run: |
+          git config user.name "scraper-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/eventos
+          if git diff --cached --quiet; then
+            echo "Sin descripciones nuevas que confirmar."
+          else
+            FECHA=$(date -u +%F)
+            git commit -m "backfill descripciones ${FECHA}"
+            git push
+          fi

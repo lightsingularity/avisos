@@ -6,6 +6,8 @@ Tipos de evento:
   precio  {"e":"precio","f":"...","id":"...","precio":123,"unidad":"total"}
   baja    {"e":"baja","f":"...","id":"..."}
   realta  {"e":"realta","f":"...","id":"..."}          # reapareció tras una baja
+  desc    {"e":"desc","f":"...","id":"...","desc":"..."} # backfill de descripción
+                                                          # (no toca precio ni fechas)
   corrida {"e":"corrida","f":"...","vistos":N,"altas":N,"bajas":N,
            "cambios":N,"errores":N,"duracion_seg":N}
 
