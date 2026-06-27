@@ -23,13 +23,18 @@ indice:
   # (evita dar de baja avisos solo porque su página de categoría falló con 403).
   umbral_cobertura: 0.8
 
-  # Enriquecer la "cola" del índice: avisos solo-id (página 2+) que llegan SIN
-  # precio y con zona del slug (contaminada). Para cada uno se visita su página
-  # de detalle (~1 solicitud c/u) y se le añade precio —los hace visibles en el
-  # tablero— y se corrige zona/colonia desde el og:title (fiable). Valores:
-  #   no     -> no enriquecer (comportamiento anterior)
-  #   venta  -> solo ventas (~440/día, ~7 min extra)
-  #   todos  -> ventas y rentas (~888/día, ~15 min extra) [cobertura ~100% MXN]
+  # Visitar el detalle de cada aviso NUEVO del índice (~1 solicitud c/u), no solo
+  # la "cola" sin precio. A la cola (solo-id, página 2+, sin precio, zona del slug
+  # contaminada) le añade precio —la hace visible en el tablero— y corrige
+  # zona/colonia desde el og:title (fiable). A los "ricos" (página 1, ya con
+  # precio y zona fiable de ZonMun) solo les aporta la descripción libre del
+  # vendedor, que el índice no trae; el detalle nunca pisa su precio/zona ya
+  # fiables. Solo aplica a ALTAS nuevas del día, no al catálogo completo —el
+  # costo en solicitudes lo marca cuántos avisos nuevos aparecen, no el inventario
+  # total. Valores:
+  #   no     -> no visitar detalle (comportamiento anterior)
+  #   venta  -> solo ventas nuevas
+  #   todos  -> ventas y rentas nuevas
   enriquecer_cola: todos
 
 # Descarga de imágenes (ver download_photos.py). Mantener en false salvo que
