@@ -14,7 +14,11 @@ Flujo:
      fuentes confiables— hoy vemos menos de la mitad de los de ayer, ABORTA sin
      registrar bajas (un fallo de descubrimiento jamás debe vaciar el inventario).
   5. Altas: parsea título+caption (sitemap) y/o tarjeta (índice). Si el aviso no
-     trae caption y la config lo permite, visita su página de detalle.
+     trae caption y la config lo permite, visita su página de detalle. Para altas
+     del índice, si `indice.enriquecer_cola` está activo, visita el detalle de
+     TODO aviso nuevo (no solo la cola sin precio) para capturar su descripción
+     libre; en los "ricos" (con precio/zona ya fiables) el detalle solo aporta
+     la descripción, nunca pisa lo que ya traían.
   6. Cambios de precio y reapariciones para los ya conocidos.
   7. Bajas: IDs que ayer estaban y hoy no — pero SOLO entre los avisos cuyas
      páginas se pudieron leer esta corrida (ver detección de bajas más abajo).
@@ -138,7 +142,7 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     # página de detalle: añade precio (los hace visibles) y corrige zona/colonia
     # (el slug de la categoría miente). no | venta | todos.
     modo_cola = str(icfg.get("enriquecer_cola", "no")).lower()
-    n_altas = n_bajas = n_cambios = n_cola = 0
+    n_altas = n_bajas = n_cambios = n_cola = n_detalle_indice = 0
     procesados: set[str] = set()
 
     # ---------------- altas / cambios desde el sitemap ----------------
@@ -211,17 +215,23 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
 
         if es_nuevo or reaparece:
             datos = _datos_indice(rec)  # tipo, zona, colonia, precio, atributos, categoría
-            # Cola sin precio: visitar el detalle la hace visible (precio) y corrige
+            tenia_precio = "precio" in datos
+            # Visita el detalle de TODO aviso nuevo del índice, no solo la cola sin
+            # precio: a los "ricos" (la mayoría, página 1, ya con precio y zona
+            # fiable de ZonMun) les aporta la descripción libre, que el índice no
+            # trae; a la cola (sin precio) además la hace visible y corrige
             # zona/colonia (el slug de la categoría está contaminado; el detalle no).
-            quiere_cola = modo_cola != "no" and "precio" not in datos and (
+            quiere_detalle = modo_cola != "no" and (
                 modo_cola == "todos" or datos.get("tipo_transaccion") == "venta")
-            if quiere_cola:
+            if quiere_detalle:
                 try:
                     extra = parsear_detalle(cliente.get(datos["url"]).text)
-                    if "precio" in extra:
+                    if not tenia_precio and "precio" in extra:
                         datos["precio"] = extra["precio"]
                         datos["precio_unidad"] = extra.get("precio_unidad", "total")
-                    if extra.get("zona"):       # el slug miente; el og:title no
+                    # zona/colonia del detalle solo pisan lo de la cola: lo "rico"
+                    # ya trae ZonMun, más fiable que el og:title del detalle.
+                    if not tenia_precio and extra.get("zona"):
                         datos["zona"] = extra["zona"]
                     if extra.get("colonia"):
                         datos.setdefault("colonia", extra["colonia"])
@@ -238,11 +248,12 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
                     for k in _ATRIB_DETALLE:
                         if k in extra:
                             datos.setdefault(k, extra[k])
-                    if "precio" in datos:
+                    if not tenia_precio and "precio" in datos:
                         n_cola += 1
+                    n_detalle_indice += 1
                 except Exception as exc:  # un detalle fallido no tumba la corrida
                     errores += 1
-                    print(f"    [aviso {idv}] enriquecimiento de cola falló: {exc}")
+                    print(f"    [aviso {idv}] enriquecimiento de detalle falló: {exc}")
             if reaparece:
                 eventos.append({"e": "realta", "f": hoy, "id": idv})
             eventos.append({"e": "alta", "f": hoy, "id": idv,
@@ -302,6 +313,7 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
     anexar_eventos(eventos)
     print(f"  Resultado: +{n_altas} altas, −{n_bajas} bajas, "
           f"~{n_cambios} cambios de precio, {n_cola} de cola enriquecidos, "
+          f"{n_detalle_indice} detalles de índice visitados, "
           f"{errores} errores, {int(time.monotonic() - inicio)} s")
     return 0
 

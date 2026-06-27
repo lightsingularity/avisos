@@ -1,10 +1,13 @@
 """Pruebas del parser de detalle (ubicación estructurada) y del enriquecimiento
-de la "cola" del índice en run.py.
+de altas nuevas del índice en run.py.
 
 La página de detalle expone la zona en el og:title y la colonia en el <title>;
 esto permite, para los avisos solo-índice sin precio (la cola), añadir precio y
-CORREGIR la zona contaminada del slug. Se usa HTML sintético (no fixtures) para
-que las pruebas no dependan de la captura del día.
+CORREGIR la zona contaminada del slug. Desde que el detalle se visita para TODA
+alta nueva del índice (no solo la cola), los avisos "ricos" (ya con precio y
+zona real de ZonMun) también lo visitan, pero solo para aportar la descripción
+libre: su precio/zona no deben perderse. Se usa HTML sintético (no fixtures)
+para que las pruebas no dependan de la captura del día.
 """
 from types import SimpleNamespace
 
@@ -106,6 +109,19 @@ def _cola(trans="venta", zona_slug="CENTRO"):
                            categorias_total=1, paginas_ok=1, paginas_total=1)
 
 
+def _indice_rico(trans="venta", zona="CUMBRES"):
+    """ResultadoIndice con UN aviso 'rico' (página 1: ya con precio y zona real
+    de ZonMun, ambos fiables — a diferencia de la cola, que no trae precio)."""
+    rec = {"id_aviso": "32360002",
+           "url": "https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32360002",
+           "tipo_transaccion": trans, "tipo_inmueble": "casa", "zona": zona,
+           "categoria": f"{trans}-casa-{zona}", "precio": 9_000_000,
+           "precio_unidad": "total", "_tipo_fiable": True, "_trans_fiable": True}
+    cat = f"{trans}-casa-{zona}"
+    return ResultadoIndice(registros={"32360002": rec}, categorias_ok={cat},
+                           categorias_total=1, paginas_ok=1, paginas_total=1)
+
+
 def _correr(monkeypatch, tmp_path, idx, cfg):
     monkeypatch.setattr(evmod, "DIR_EVENTOS", tmp_path / "eventos")
     cliente = _ClienteDetalle(_detalle_html(zona="VALLE", colonia="LOS ROBLES"))
@@ -173,3 +189,32 @@ def test_cola_venta_no_toca_rentas(monkeypatch, tmp_path):
     codigo, cliente = _correr(monkeypatch, tmp_path, _cola(trans="renta"), cfg)
     assert codigo == 0
     assert cliente.gets == 0
+
+
+def test_indice_rico_recibe_descripcion_sin_perder_zona_ni_precio(monkeypatch, tmp_path):
+    # Un aviso 'rico' (ya con precio, página 1) ahora también visita su detalle
+    # -para conseguir la descripción libre-, pero el detalle NO debe pisarle su
+    # zona/precio reales (ZonMun/índice), más fiables que el og:title del detalle.
+    cfg = {"detalle": "nunca", "usar_indice": True,
+           "indice": {"enriquecer_cola": "venta"}}
+    monkeypatch.setattr(evmod, "DIR_EVENTOS", tmp_path / "eventos")
+    html = _detalle_html(zona="VALLE", colonia="LOS ROBLES",
+                         descripcion_larga="Bodega con oficinas, llamar al 81-1234-5678")
+    cliente = _ClienteDetalle(html)
+    monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: cliente)
+    monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: _sitemap_dummy())
+    monkeypatch.setattr(runmod, "cosechar_indice",
+                        lambda c, cfg=None, categorias_historicas=None: _indice_rico())
+    assert runmod.correr(cfg, fecha="2026-06-20") == 0
+    assert cliente.gets == 1  # ahora también visita su detalle
+
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    fila = con.execute("SELECT zona, descripcion FROM avisos "
+                       "WHERE id_aviso='32360002'").fetchone()
+    assert fila[0] == "CUMBRES"  # zona real (ZonMun), no la pisa el og:title (VALLE)
+    assert "Bodega con oficinas" in fila[1]
+    assert "1234" not in fila[1] and "[tel]" in fila[1]
+
+    precio = con.execute("SELECT precio_actual FROM analisis "
+                         "WHERE id_aviso='32360002'").fetchone()[0]
+    assert precio == 9_000_000  # precio real del índice, no lo pisa el detalle ($3.5M)

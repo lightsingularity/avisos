@@ -25,8 +25,11 @@ el **SLUG**. Si el historial está vacío (re-captura desde cero / clon nuevo), 
 **SEMILLA** versionada (`data/categorias_semilla.txt`, 59 slugs) para no quedarse sin
 categorías. `run.py` ya no aborta cuando el sitemap está caído: el **índice es la
 fuente principal**, el sitemap de novedades es **opcional** (se usa si vuelve a servir
-XML). Captura forward-only: ids nuevos → detalle (`enriquecer_cola: todos`); avisos
-de página 1 se tipan/precian gratis desde los objetos ricos.
+XML). Captura forward-only: TODA alta nueva del índice visita detalle
+(`enriquecer_cola: todos`) — a la cola (sin precio) le aporta precio y corrige
+zona/colonia; a los "ricos" de página 1 (tipo/precio/zona ya fiables desde los
+objetos del índice) el detalle solo les aporta la descripción libre del
+vendedor, sin pisar lo ya fiable.
 
 **Línea base re-capturada limpia (2026-06-25) vía Plan B + semilla** —ya NO esperó al
 sitemap—: ~2,215 avisos, tipado por `K_Cla3`, 97 % con precio. El ruido legacy (mal
