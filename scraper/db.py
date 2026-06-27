@@ -190,6 +190,14 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
                 (ev["id"], f, precio, unidad),
             )
         con.execute("UPDATE avisos SET fecha_ultima_vista=? WHERE id_aviso=?", (f, ev["id"]))
+    elif e == "desc":
+        # Solo rellena la descripción libre de un aviso ya existente (backfill);
+        # no toca precios ni fechas. No pisa una descripción ya presente.
+        con.execute(
+            "UPDATE avisos SET descripcion=? "
+            "WHERE id_aviso=? AND (descripcion IS NULL OR descripcion='')",
+            (ev["desc"], ev["id"]),
+        )
     elif e == "baja":
         con.execute("UPDATE avisos SET fecha_baja=? WHERE id_aviso=?", (f, ev["id"]))
     elif e == "realta":

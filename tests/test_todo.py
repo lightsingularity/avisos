@@ -243,6 +243,34 @@ def test_precio_placeholder_luego_real_si_aparece(tmp_path):
     assert fila == (3_500_000,)   # el placeholder se ignoró; el real sí entró
 
 
+def test_evento_desc_rellena_sin_pisar_ni_tocar_precio(tmp_path):
+    # El evento `desc` (backfill) solo rellena la descripción de un aviso ya
+    # existente: no toca precio/fechas y NO pisa una descripción ya presente.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([
+        {"e": "alta", "f": "2026-06-25", "id": "A",
+         "datos": {"tipo_transaccion": "venta", "tipo_inmueble": "casa",
+                   "precio": 3_500_000, "precio_unidad": "total",
+                   "url": "http://x/A"}, "fotos": []},
+        {"e": "alta", "f": "2026-06-25", "id": "B",
+         "datos": {"tipo_transaccion": "venta", "tipo_inmueble": "casa",
+                   "precio": 4_000_000, "precio_unidad": "total",
+                   "descripcion": "ya tenía texto", "url": "http://x/B"}, "fotos": []},
+        # A no tenía descripción -> se rellena; B sí -> se respeta.
+        {"e": "desc", "f": "2026-06-27", "id": "A", "desc": "Lote industrial con bodega"},
+        {"e": "desc", "f": "2026-06-27", "id": "B", "desc": "intento de pisar"},
+    ], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    fila_a = con.execute(
+        "SELECT descripcion, fecha_primera_vista FROM avisos WHERE id_aviso='A'").fetchone()
+    assert fila_a[0] == "Lote industrial con bodega"
+    assert fila_a[1] == "2026-06-25"  # el desc NO tocó la fecha de alta
+    # El precio sigue intacto y el aviso sigue en el tablero.
+    assert con.execute("SELECT precio_actual FROM analisis WHERE id_aviso='A'").fetchone() == (3_500_000,)
+    # B ya tenía descripción: el desc no la pisa.
+    assert con.execute("SELECT descripcion FROM avisos WHERE id_aviso='B'").fetchone()[0] == "ya tenía texto"
+
+
 # ---------- precio 'por m²' mal etiquetado (en realidad un total) ----------
 def test_normaliza_precio_m2_alto_a_total():
     # El sitio mete el TOTAL en el campo de "precio por m²" ($7.5M/m²): se
