@@ -76,6 +76,17 @@ def solo_total(df: pd.DataFrame) -> pd.DataFrame:
     return df[df["precio_unidad"] == "total"]
 
 
+def buscar_descripcion(df: pd.DataFrame, palabra: str) -> pd.DataFrame:
+    """Avisos cuya descripción contiene `palabra` (insensible a may/min).
+
+    Para encontrar detalles que no tienen columna propia (lote industrial,
+    cajones de estacionamiento, amenidades…) y solo viven en el texto libre.
+    """
+    if not palabra:
+        return df
+    return df[df["descripcion"].fillna("").str.contains(palabra, case=False, regex=False)]
+
+
 # --------------------------- agregaciones --------------------------------
 def serie_mensual(hist: pd.DataFrame, modo: str = "total") -> pd.DataFrame:
     """Mediana mensual de precio. modo: 'total' | 'm2_construccion' | 'm2_terreno'.

@@ -79,8 +79,14 @@ if zonas:
     colonias_disp = sorted(df_todo[df_todo["zona"].isin(zonas)]["colonia"]
                            .dropna().unique().tolist())
 colonias = st.sidebar.multiselect("Colonia", colonias_disp)
+busqueda = st.sidebar.text_input(
+    "Buscar en descripción",
+    placeholder="p. ej. industrial, estacionamiento",
+    help="Busca dentro del texto libre del anuncio (no tiene columna propia).",
+)
 
 df = an.aplicar_filtros(df_todo, trans, tipos, zonas, colonias)
+df = an.buscar_descripcion(df, busqueda)
 ids = set(df["id_aviso"])
 hist = hist_todo[hist_todo["id_aviso"].isin(ids)]
 
@@ -201,7 +207,7 @@ with tab_datos:
             "precio_actual", "precio_unidad", "precio_m2_construccion",
             "precio_m2_terreno", "recamaras", "banos", "m2_construccion",
             "m2_terreno", "dias_en_mercado", "num_cambios_precio",
-            "fecha_primera_vista", "fecha_baja", "url"]
+            "fecha_primera_vista", "fecha_baja", "url", "descripcion"]
     vista = df[cols].sort_values("precio_actual", ascending=False)
     st.dataframe(vista, use_container_width=True, height=460)
     st.download_button(
