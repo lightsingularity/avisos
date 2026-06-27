@@ -17,7 +17,7 @@ from scraper.sitemap import EntradaSitemap
 
 
 def _detalle_html(trans_tipo="Se vende casa", zona="VALLE", colonia="LOS ROBLES",
-                  precio="3500000", con_og=True, con_label=True):
+                  precio="3500000", con_og=True, con_label=True, descripcion_larga=None):
     og = f'<meta property="og:title" content="{trans_tipo} en {zona}">' if con_og else ""
     label = f"<p>Zona: {zona} Colonia Precio Desde: Hasta:</p>" if con_label else ""
     jsonld = ""
@@ -26,10 +26,14 @@ def _detalle_html(trans_tipo="Se vende casa", zona="VALLE", colonia="LOS ROBLES"
         jsonld = ('<script type="application/ld+json">'
                   '{"@type":"Product","offers":{"@type":"Offer",'
                   '"price":"%s","priceCurrency":"MXN"}}</script>') % precio
+    desc_div = ""
+    if descripcion_larga:
+        desc_div = (f'<div id="id_descripcion"><p>resumen corto</p>'
+                    f'<p>{descripcion_larga}</p></div>')
     return f"""<html><head>
       <title>{trans_tipo} en {colonia} | Avisos de Ocasión</title>
       {og}{jsonld}
-    </head><body>{label}<div>3 Recámaras 2 baños</div></body></html>"""
+    </head><body>{label}<div>3 Recámaras 2 baños</div>{desc_div}</body></html>"""
 
 
 # ----------------------------- parser ----------------------------------
@@ -56,6 +60,15 @@ def test_detalle_sin_ubicacion_no_inventa():
 def test_detalle_zona_con_espacios():
     out = parsear_detalle(_detalle_html(zona="CARRETERA NACIONAL", colonia="SIERRA ALTA"))
     assert out["zona"] == "CARRETERA NACIONAL" and out["colonia"] == "SIERRA ALTA"
+
+
+def test_detalle_descripcion_completa_no_solo_el_resumen():
+    # La sección "DESCRIPCIÓN" trae el texto libre del vendedor (lote industrial,
+    # cajones de estacionamiento…); no debe quedarse con el resumen corto.
+    out = parsear_detalle(_detalle_html(
+        descripcion_larga="Lote industrial con 4 cajones de estacionamiento"))
+    assert "resumen corto" in out["descripcion"]
+    assert "Lote industrial con 4 cajones de estacionamiento" in out["descripcion"]
 
 
 # ----------------- enriquecimiento de la cola en run.py -----------------
@@ -116,6 +129,28 @@ def test_cola_enriquecida_corrige_zona_y_da_precio(monkeypatch, tmp_path):
                        "WHERE id_aviso='32360001'").fetchone()
     # Antes: invisible (sin precio) y zona CENTRO (slug). Ahora: visible, zona real.
     assert fila == ("VALLE", "LOS ROBLES", 3_500_000)
+
+
+def test_cola_enriquecida_copia_descripcion_sin_contactos(monkeypatch, tmp_path):
+    # El índice no trae texto libre; el detalle de la cola debe aportarlo,
+    # ya sin teléfonos.
+    cfg = {"detalle": "nunca", "usar_indice": True,
+           "indice": {"enriquecer_cola": "venta"}}
+    monkeypatch.setattr(evmod, "DIR_EVENTOS", tmp_path / "eventos")
+    html = _detalle_html(zona="VALLE", colonia="LOS ROBLES",
+                         descripcion_larga="Bodega con oficinas, llamar al 81-1234-5678")
+    cliente = _ClienteDetalle(html)
+    monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: cliente)
+    monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: _sitemap_dummy())
+    monkeypatch.setattr(runmod, "cosechar_indice",
+                        lambda c, cfg=None, categorias_historicas=None: _cola())
+    assert runmod.correr(cfg, fecha="2026-06-20") == 0
+
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    desc = con.execute("SELECT descripcion FROM avisos "
+                       "WHERE id_aviso='32360001'").fetchone()[0]
+    assert "Bodega con oficinas" in desc
+    assert "1234" not in desc and "[tel]" in desc
 
 
 def test_cola_desactivada_deja_aviso_invisible(monkeypatch, tmp_path):

@@ -81,6 +81,17 @@ def parsear_detalle(html: str) -> dict[str, Any]:
     if desc_meta and "descripcion" not in out:
         out["descripcion"] = desc_meta
 
+    # La sección visible "DESCRIPCIÓN" trae el texto LIBRE que escribió el
+    # anunciante (lote industrial, cajones de estacionamiento, amenidades…);
+    # meta/JSON-LD solo repiten un resumen corto plantilla. Si está, manda
+    # sobre lo anterior (superconjunto más rico, no solo un respaldo).
+    div_desc = sopa.find("div", id="id_descripcion")
+    if div_desc:
+        parrafos = [p.get_text(" ", strip=True) for p in div_desc.find_all("p")]
+        texto_desc = "\n".join(p for p in parrafos if p)
+        if texto_desc:
+            out["descripcion"] = texto_desc
+
     # --- 3) Texto visible: caption-style + chips ---
     texto = sopa.get_text(" ", strip=True)
     # Respaldo de zona: la etiqueta explícita "Zona: X" si no la dio el og:title.

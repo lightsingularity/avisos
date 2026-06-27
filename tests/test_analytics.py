@@ -46,7 +46,7 @@ def con(tmp_path):
               precio_unidad="total"),
         _alta("2026-05-15", "T1", tipo_transaccion="venta", tipo_inmueble="terreno",
               zona="APODACA", colonia="HUINALA", m2_terreno=500, precio=4_500,
-              precio_unidad="m2"),
+              precio_unidad="m2", descripcion="Excelente lote INDUSTRIAL, listo para construir"),
         # --- junio: C1 baja de precio; C2 se da de baja ---
         {"e": "precio", "f": "2026-06-05", "id": "C1", "precio": 5_400_000, "unidad": "total"},
         {"e": "baja", "f": "2026-06-20", "id": "C2"},
@@ -69,6 +69,18 @@ def test_filtros(con):
     cumbres = an.aplicar_filtros(df, transaccion="venta", tipos=["casa"], zonas=["CUMBRES"])
     assert len(cumbres) == 2
     assert set(cumbres["id_aviso"]) == {"C1", "C2"}
+
+
+def test_buscar_descripcion(con):
+    df = an.cargar_analisis(con)
+    # Insensible a mayúsculas/minúsculas
+    encontrados = an.buscar_descripcion(df, "industrial")
+    assert set(encontrados["id_aviso"]) == {"T1"}
+    # Sin coincidencias -> vacío; sin palabra -> no filtra (devuelve todo)
+    assert an.buscar_descripcion(df, "alberca").empty
+    assert len(an.buscar_descripcion(df, "")) == len(df)
+    # Avisos sin descripción (NaN) no truenan la búsqueda
+    assert "C1" not in set(an.buscar_descripcion(df, "industrial")["id_aviso"])
 
 
 def test_resumen_segmento_excluye_precio_por_m2(con):

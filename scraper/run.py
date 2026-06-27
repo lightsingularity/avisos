@@ -225,6 +225,8 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
                         datos["zona"] = extra["zona"]
                     if extra.get("colonia"):
                         datos.setdefault("colonia", extra["colonia"])
+                    if extra.get("descripcion"):  # el índice no trae texto libre
+                        datos.setdefault("descripcion", limpiar_contactos(extra["descripcion"]))
                     # El tipo de la cola viene del SLUG (contaminado). Si no es
                     # fiable (no salió del código K_Cla3), el del detalle (og:title)
                     # manda: una casa cross-listada en una página de terrenos deja
