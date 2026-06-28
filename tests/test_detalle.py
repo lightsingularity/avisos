@@ -20,8 +20,11 @@ from scraper.sitemap import EntradaSitemap
 
 
 def _detalle_html(trans_tipo="Se vende casa", zona="VALLE", colonia="LOS ROBLES",
-                  precio="3500000", con_og=True, con_label=True, descripcion_larga=None):
+                  precio="3500000", con_og=True, con_label=True, descripcion_larga=None,
+                  resumen=None):
     og = f'<meta property="og:title" content="{trans_tipo} en {zona}">' if con_og else ""
+    # og:description = resumen ESTRUCTURADO del panel ("X Recámaras Y 1/2baños").
+    ogd = f'<meta property="og:description" content="{resumen}">' if resumen else ""
     label = f"<p>Zona: {zona} Colonia Precio Desde: Hasta:</p>" if con_label else ""
     jsonld = ""
     if precio:
@@ -35,7 +38,7 @@ def _detalle_html(trans_tipo="Se vende casa", zona="VALLE", colonia="LOS ROBLES"
                     f'<p>{descripcion_larga}</p></div>')
     return f"""<html><head>
       <title>{trans_tipo} en {colonia} | Avisos de Ocasión</title>
-      {og}{jsonld}
+      {og}{ogd}{jsonld}
     </head><body>{label}<div>3 Recámaras 2 baños</div>{desc_div}</body></html>"""
 
 
@@ -80,6 +83,14 @@ def test_detalle_transaccion_del_ogtitle_no_la_sombrea_jsonld():
     assert out["tipo_transaccion"] == "venta"
     assert out["tipo_inmueble"] == "departamento"
     assert out["zona"] == "VALLE"
+
+
+def test_detalle_banos_del_resumen_estructurado_gana_al_cuerpo():
+    # El panel (og:description) dice "2 1/2baños" = 2.5; el cuerpo libre tiene
+    # "2 baños" (=2.0). El resumen estructurado MANDA: medios baños no se pierden.
+    out = parsear_detalle(_detalle_html(resumen="3 Recámaras 2 1/2baños $3,500,000"))
+    assert out["banos"] == 2.5
+    assert out["recamaras"] == 3.0
 
 
 def test_detalle_descripcion_completa_no_solo_el_resumen():
@@ -133,7 +144,8 @@ def _indice_rico(trans="venta", zona="CUMBRES"):
            "url": "https://www.avisosdeocasion.com/Detalle/BienesRaices?Aviso=32360002",
            "tipo_transaccion": trans, "tipo_inmueble": "casa", "zona": zona,
            "categoria": f"{trans}-casa-{zona}", "precio": 9_000_000,
-           "precio_unidad": "total", "_tipo_fiable": True, "_trans_fiable": True}
+           "precio_unidad": "total", "banos": 3.0,  # el índice subcuenta el medio baño
+           "_tipo_fiable": True, "_trans_fiable": True}
     cat = f"{trans}-casa-{zona}"
     return ResultadoIndice(registros={"32360002": rec}, categorias_ok={cat},
                            categorias_total=1, paginas_ok=1, paginas_total=1)
@@ -206,6 +218,24 @@ def test_detalle_transaccion_manda_sobre_indice(monkeypatch, tmp_path):
     fila = con.execute(
         "SELECT tipo_transaccion, precio_actual FROM analisis WHERE id_aviso='32360002'").fetchone()
     assert fila == ("venta", 9_000_000)  # el detalle (venta) ganó sobre el índice (renta)
+
+
+def test_detalle_banos_manda_sobre_indice(monkeypatch, tmp_path):
+    # El índice trae banos=3.0 (subcuenta el medio baño); el panel del detalle dice
+    # "3 1/2baños"=3.5. El detalle MANDA: la base guarda 3.5.
+    cfg = {"detalle": "nunca", "usar_indice": True,
+           "indice": {"enriquecer_cola": "todos"}}
+    monkeypatch.setattr(evmod, "DIR_EVENTOS", tmp_path / "eventos")
+    cliente = _ClienteDetalle(_detalle_html(zona="CUMBRES", colonia="X",
+                                            resumen="3 Recámaras 3 1/2baños $9,000,000"))
+    monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: cliente)
+    monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: _sitemap_dummy())
+    monkeypatch.setattr(runmod, "cosechar_indice",
+                        lambda c, cfg=None, categorias_historicas=None: _indice_rico())
+    assert runmod.correr(cfg, fecha="2026-06-20") == 0
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    banos = con.execute("SELECT banos FROM avisos WHERE id_aviso='32360002'").fetchone()[0]
+    assert banos == 3.5  # el detalle corrigió el medio baño que el índice perdió
 
 
 def test_cola_desactivada_deja_aviso_invisible(monkeypatch, tmp_path):

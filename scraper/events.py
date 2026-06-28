@@ -10,6 +10,8 @@ Tipos de evento:
                                                           # (no toca precio ni fechas)
   trans   {"e":"trans","f":"...","id":"...","trans":"venta"} # backfill: corrige la
                                                           # transacción (re-leída del detalle)
+  attrs   {"e":"attrs","f":"...","id":"...","attrs":{"banos":3.5}} # backfill: corrige
+                                                          # atributos del panel del detalle
   corrida {"e":"corrida","f":"...","vistos":N,"altas":N,"bajas":N,
            "cambios":N,"errores":N,"duracion_seg":N}
 

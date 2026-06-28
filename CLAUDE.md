@@ -110,6 +110,15 @@ listings only**) via `analytics.py`.
   el sitemap de grupos es el **historial** (la bitácora).
 - **`m²` rendering:** detail pages use plain `m2` (so `detail_parser`/`atributos`
   work); category cards use `m<sup>2</sup>` — but índice reads the JSON, not text.
+- **El índice es CATÁLOGO, el detalle es VERDAD.** El índice sirve para DESCUBRIR
+  (qué avisos existen, `K_Avisos`) y para BAJAS; sus atributos son un atajo de la
+  página 1, pero **subcuentan** (p. ej. los medios baños: trae `Banios` sin `MedBan`,
+  da 3.0 donde el panel dice 3.5). Como YA visitamos el detalle de toda alta, los
+  atributos numéricos del **panel del detalle MANDAN** sobre el índice (`run.py`,
+  override). El panel se lee del **`og:description` ESTRUCTURADO** (no del cuerpo
+  libre: el cuerpo tiene números sueltos —"… 2 Baños 2.5 …"— y un parseo del cuerpo
+  agarra el "2"). Para la línea base, el evento `attrs` (backfill
+  `backfill_atributos.py`) re-lee el panel y corrige.
 - **Tests assert INVARIANTS** against real fixtures, which `calibrate.py`
   overwrites each run. Don't pin exact counts/ids (`tests/test_indice.py`).
 - **USD listings:** price omitted (no currency column); MXN only.
