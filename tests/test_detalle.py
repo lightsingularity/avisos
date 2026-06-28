@@ -65,6 +65,23 @@ def test_detalle_zona_con_espacios():
     assert out["zona"] == "CARRETERA NACIONAL" and out["colonia"] == "SIERRA ALTA"
 
 
+def test_detalle_transaccion_del_ogtitle_no_la_sombrea_jsonld():
+    # Caso real (PH 32348746): el name de JSON-LD es marketing ("Espectacular
+    # Penthouse…") y NO clasifica; no debe sombrear al og:title estructurado
+    # "Se vende departamento en VALLE". La transacción/tipo salen del og:title.
+    html = """<html><head>
+      <title>Se vende departamento en VALLE ORIENTE | Avisos de Ocasión</title>
+      <meta property="og:title" content="Se vende departamento en VALLE">
+      <script type="application/ld+json">
+      {"@type":"Product","name":"Espectacular Penthouse con las mejores vistas",
+       "offers":{"@type":"Offer","price":"20800000","priceCurrency":"MXN"}}</script>
+    </head><body><div>3 Recámaras 3 baños</div></body></html>"""
+    out = parsear_detalle(html)
+    assert out["tipo_transaccion"] == "venta"
+    assert out["tipo_inmueble"] == "departamento"
+    assert out["zona"] == "VALLE"
+
+
 def test_detalle_descripcion_completa_no_solo_el_resumen():
     # La sección "DESCRIPCIÓN" trae el texto libre del vendedor (lote industrial,
     # cajones de estacionamiento…); no debe quedarse con el resumen corto.
@@ -167,6 +184,28 @@ def test_cola_enriquecida_copia_descripcion_sin_contactos(monkeypatch, tmp_path)
                        "WHERE id_aviso='32360001'").fetchone()[0]
     assert "Bodega con oficinas" in desc
     assert "1234" not in desc and "[tel]" in desc
+
+
+def test_detalle_transaccion_manda_sobre_indice(monkeypatch, tmp_path):
+    # Anuncio doble venta/renta: el índice lo trae como RENTA (archivado en esa
+    # categoría) pero el detalle dice "Se vende". La transacción del detalle manda.
+    cfg = {"detalle": "nunca", "usar_indice": True,
+           "indice": {"enriquecer_cola": "todos"}}
+    monkeypatch.setattr(evmod, "DIR_EVENTOS", tmp_path / "eventos")
+    cliente = _ClienteDetalle(_detalle_html(trans_tipo="Se vende departamento",
+                                            zona="VALLE", colonia="VALLE ORIENTE"))
+    monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: cliente)
+    monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: _sitemap_dummy())
+    # Rico con transacción RENTA fiable (K_Cla2) y precio de venta.
+    monkeypatch.setattr(runmod, "cosechar_indice",
+                        lambda c, cfg=None, categorias_historicas=None:
+                        _indice_rico(trans="renta"))
+    assert runmod.correr(cfg, fecha="2026-06-20") == 0
+
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    fila = con.execute(
+        "SELECT tipo_transaccion, precio_actual FROM analisis WHERE id_aviso='32360002'").fetchone()
+    assert fila == ("venta", 9_000_000)  # el detalle (venta) ganó sobre el índice (renta)
 
 
 def test_cola_desactivada_deja_aviso_invisible(monkeypatch, tmp_path):

@@ -59,27 +59,6 @@ def normalizar_unidad(precio, unidad):
     return precio, unidad
 
 
-# Techo de plausibilidad de una RENTA mensual TOTAL (MXN). Los anuncios DOBLES
-# "venta o renta" (un PH en venta $20.8M / renta $125k) los archiva el sitio en la
-# categoría de renta —su K_Cla2 dice renta— pero su precio principal es el de
-# VENTA. Resultado: una "renta" con precio de venta. Ninguna renta mensual real
-# llega a esto (en el corpus, las rentas legítimas más altas —naves industriales
-# grandes— rondan $1.3M; los precios de venta mal archivados arrancan en ~$10M:
-# hay un hueco enorme entre ambos). Por encima del techo reinterpretamos la
-# transacción como 'venta', para que precio y transacción queden coherentes. La
-# bitácora conserva la transacción original; solo la base derivada la corrige.
-TECHO_RENTA_TOTAL = 3_000_000
-
-
-def reinterpretar_transaccion(transaccion, precio, unidad):
-    """Una 'renta' con precio TOTAL de tamaño de venta es en realidad una venta
-    (anuncio doble venta/renta archivado en renta con el precio de venta)."""
-    if (transaccion == "renta" and unidad == "total"
-            and precio is not None and precio >= TECHO_RENTA_TOTAL):
-        return "venta"
-    return transaccion
-
-
 def _sql_lista(valores) -> str:
     """{'a', 'b'} -> "'a', 'b'" para una cláusula IN de SQLite."""
     return ", ".join(f"'{v}'" for v in sorted(valores))
@@ -207,22 +186,16 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
     e, f = ev["e"], ev["f"]
     if e == "alta":
         d = ev.get("datos", {})
-        # Corrige el anuncio doble venta/renta archivado en renta con precio de
-        # venta: la transacción almacenada pasa a 'venta' (coherente con el precio).
-        unidad_alta = d.get("precio_unidad", "total")
-        trans = reinterpretar_transaccion(
-            d.get("tipo_transaccion"), d.get("precio"), unidad_alta)
-        valores = [trans if c == "tipo_transaccion" else d.get(c) for c in _CAMPOS_AVISO]
         con.execute(
             f"""INSERT OR REPLACE INTO avisos
                 (id_aviso, {', '.join(_CAMPOS_AVISO)},
                  fecha_primera_vista, fecha_ultima_vista, fecha_baja)
                 VALUES (?{', ?' * len(_CAMPOS_AVISO)}, ?, ?, NULL)""",
-            [ev["id"]] + valores + [f, f],
+            [ev["id"]] + [d.get(c) for c in _CAMPOS_AVISO] + [f, f],
         )
         if "precio" in d:
-            precio, unidad = normalizar_unidad(d["precio"], unidad_alta)
-            if precio_valido(precio, unidad, trans):
+            precio, unidad = normalizar_unidad(d["precio"], d.get("precio_unidad", "total"))
+            if precio_valido(precio, unidad, d.get("tipo_transaccion")):
                 con.execute(
                     "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
                     (ev["id"], f, precio, unidad),
@@ -236,13 +209,7 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
         fila = con.execute(
             "SELECT tipo_transaccion FROM avisos WHERE id_aviso=?", (ev["id"],)).fetchone()
         precio, unidad = normalizar_unidad(ev["precio"], ev.get("unidad", "total"))
-        # Un cambio de precio que revela un precio de venta sobre una "renta"
-        # también reclasifica la transacción (mismo anuncio doble venta/renta).
-        previa = fila[0] if fila else None
-        trans = reinterpretar_transaccion(previa, precio, unidad)
-        if trans != previa:
-            con.execute("UPDATE avisos SET tipo_transaccion=? WHERE id_aviso=?", (trans, ev["id"]))
-        if precio_valido(precio, unidad, trans):
+        if precio_valido(precio, unidad, fila[0] if fila else None):
             con.execute(
                 "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
                 (ev["id"], f, precio, unidad),
@@ -256,6 +223,12 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
             "WHERE id_aviso=? AND (descripcion IS NULL OR descripcion='')",
             (ev["desc"], ev["id"]),
         )
+    elif e == "trans":
+        # Corrige la transacción de un aviso ya existente (backfill) re-leída del
+        # DETALLE (página canónica). Para anuncios dobles venta/renta archivados en
+        # renta con precio de venta: el detalle dice 'venta'. No toca precio/fechas.
+        con.execute("UPDATE avisos SET tipo_transaccion=? WHERE id_aviso=?",
+                    (ev["trans"], ev["id"]))
     elif e == "baja":
         con.execute("UPDATE avisos SET fecha_baja=? WHERE id_aviso=?", (f, ev["id"]))
     elif e == "realta":

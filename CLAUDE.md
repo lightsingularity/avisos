@@ -128,13 +128,14 @@ listings only**) via `analytics.py`.
   `MIN_M2_TERRENO` (50 m²): ningún suelo real es tan chico.)
 - **Anuncios dobles venta/renta (renta con precio de venta):** un anuncio "en venta
   o renta" (p. ej. un PH venta $20.8M / renta $125k) el sitio lo archiva en la
-  categoría de RENTA —su `K_Cla2` dice renta— pero su precio principal es el de
-  VENTA. Queda una "renta" con precio de venta. `db.reinterpretar_transaccion`
-  reclasifica a `venta` cualquier renta TOTAL ≥ `TECHO_RENTA_TOTAL` ($3M) al
-  reconstruir (en el corpus, las rentas reales más altas —naves grandes— rondan
-  $1.3M y los precios de venta mal archivados arrancan en ~$10M: hueco enorme). Así
-  precio y transacción quedan coherentes. La **bitácora conserva** la transacción
-  original (fiel al sitio); solo la **base derivada** la corrige.
+  categoría de RENTA —su `K_Cla2` dice renta— pero su precio principal y su DETALLE
+  son los de VENTA. La **página de detalle es la fuente de verdad de la transacción**:
+  su `og:title` dice "Se vende departamento en VALLE". Por eso `run.py` deja que la
+  transacción del detalle **mande sobre el `K_Cla2`** del índice, y el detalle se
+  clasifica desde el `og:title`/`<title>` ESTRUCTURADO **antes** que el `name` de
+  JSON-LD (que es marketing —"Espectacular Penthouse…"— y no clasifica; si se probara
+  primero sombrearía al og:title). Para la línea base ya guardada, el evento `trans`
+  (backfill `backfill_transaccion.py`) re-lee el detalle y corrige la transacción.
 
 ---
 
