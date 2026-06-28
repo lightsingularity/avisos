@@ -212,6 +212,48 @@ def test_precio_valido_pisos():
     assert dbmod.precio_valido(None, "total", "venta") is True  # sin precio: nada que filtrar
 
 
+def test_reinterpreta_renta_con_precio_de_venta():
+    # Anuncio doble venta/renta archivado en renta con el precio de VENTA:
+    # por encima del techo se reclasifica a venta; una renta normal no se toca.
+    assert dbmod.reinterpretar_transaccion("renta", 20_800_000, "total") == "venta"
+    assert dbmod.reinterpretar_transaccion("renta", 125_000, "total") == "renta"
+    assert dbmod.reinterpretar_transaccion("renta", 1_272_000, "total") == "renta"  # nave legítima
+    assert dbmod.reinterpretar_transaccion("venta", 20_800_000, "total") == "venta"  # no toca venta
+    assert dbmod.reinterpretar_transaccion("renta", 5_000_000, "m2") == "renta"      # por m²: no aplica
+    assert dbmod.reinterpretar_transaccion("renta", None, "total") == "renta"
+
+
+def test_alta_renta_con_precio_de_venta_se_reclasifica(tmp_path):
+    # El caso real (PH 32348746): renta con precio de venta -> venta en la base.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([{
+        "e": "alta", "f": "2026-06-25", "id": "D",
+        "datos": {"tipo_transaccion": "renta", "tipo_inmueble": "departamento",
+                  "zona": "VALLE", "precio": 20_800_000, "precio_unidad": "total",
+                  "url": "http://x/D"}, "fotos": []}], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    fila = con.execute(
+        "SELECT tipo_transaccion, precio_actual FROM analisis WHERE id_aviso='D'").fetchone()
+    assert fila == ("venta", 20_800_000)
+
+
+def test_precio_evento_revela_venta_reclasifica(tmp_path):
+    # Un cambio de precio que trae un precio de venta sobre una renta normal
+    # también reclasifica la transacción.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([
+        {"e": "alta", "f": "2026-06-25", "id": "E",
+         "datos": {"tipo_transaccion": "renta", "tipo_inmueble": "departamento",
+                   "zona": "VALLE", "precio": 120_000, "precio_unidad": "total",
+                   "url": "http://x/E"}, "fotos": []},
+        {"e": "precio", "f": "2026-06-26", "id": "E", "precio": 15_000_000, "unidad": "total"},
+    ], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    fila = con.execute(
+        "SELECT tipo_transaccion, precio_actual FROM analisis WHERE id_aviso='E'").fetchone()
+    assert fila == ("venta", 15_000_000)
+
+
 def test_precio_placeholder_no_entra_a_analisis(tmp_path):
     def _alta(idv, precio, trans="venta"):
         return {"e": "alta", "f": "2026-06-25", "id": idv,
