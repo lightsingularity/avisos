@@ -250,9 +250,13 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
                     # los de VENTA; el detalle desempata a favor de lo coherente.
                     if extra.get("tipo_transaccion"):
                         datos["tipo_transaccion"] = extra["tipo_transaccion"]
+                    # Atributos numéricos: el DETALLE (resumen estructurado del
+                    # panel) MANDA sobre el índice. El índice subcuenta los medios
+                    # baños (Banios sin MedBan): da 3.0 donde el panel dice 3.5. El
+                    # detalle, fuente de verdad, los corrige.
                     for k in _ATRIB_DETALLE:
                         if k in extra:
-                            datos.setdefault(k, extra[k])
+                            datos[k] = extra[k]
                     if not tenia_precio and "precio" in datos:
                         n_cola += 1
                     n_detalle_indice += 1

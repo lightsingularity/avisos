@@ -149,6 +149,13 @@ _CAMPOS_AVISO = [
     "metros_frente", "m2_oficina", "m2_bodega", "mas_iva", "descripcion",
 ]
 
+# Columnas numéricas que el evento `attrs` (backfill desde el panel) puede tocar.
+# Whitelist: solo atributos del panel, nunca precio/transacción/ubicación/fechas.
+_COLS_ATRIB = frozenset({
+    "recamaras", "banos", "plantas", "m2_construccion", "m2_terreno",
+    "m2_oficina", "m2_bodega", "metros_frente", "hectareas", "mas_iva",
+})
+
 
 def reconstruir(ruta_db: Path = RUTA_DB, dir_eventos=None) -> sqlite3.Connection:
     """Reconstruye la base completa reproduciendo la bitácora de eventos."""
@@ -229,6 +236,16 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
         # renta con precio de venta: el detalle dice 'venta'. No toca precio/fechas.
         con.execute("UPDATE avisos SET tipo_transaccion=? WHERE id_aviso=?",
                     (ev["trans"], ev["id"]))
+    elif e == "attrs":
+        # Corrige atributos numéricos de un aviso existente (backfill) re-leídos del
+        # PANEL del detalle (resumen estructurado). Sobre todo el medio baño que el
+        # índice subcuenta. No toca precio/fechas/transacción. Whitelist de columnas.
+        campos = [c for c in ev.get("attrs", {}) if c in _COLS_ATRIB]
+        if campos:
+            con.execute(
+                f"UPDATE avisos SET {', '.join(c + '=?' for c in campos)} WHERE id_aviso=?",
+                [ev["attrs"][c] for c in campos] + [ev["id"]],
+            )
     elif e == "baja":
         con.execute("UPDATE avisos SET fecha_baja=? WHERE id_aviso=?", (f, ev["id"]))
     elif e == "realta":

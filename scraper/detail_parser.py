@@ -27,6 +27,11 @@ _RX_EN = re.compile(r"\ben\s+(.+?)\s*(?:\||$)", re.I)
 # Etiqueta explícita "Zona: VALLE Colonia ..." (respaldo si falta og:title).
 _RX_ZONA_LBL = re.compile(r"Zona:\s*([^|]+?)\s+Colonia", re.I)
 
+# Atributos numéricos del panel "DETALLE" que se leen del resumen ESTRUCTURADO
+# (og:description), no del cuerpo libre. Son la fuente fiable (medios baños, m²…).
+_ATRIB_PANEL = ("recamaras", "banos", "plantas", "m2_construccion", "m2_terreno",
+                "m2_oficina", "m2_bodega", "metros_frente", "hectareas", "mas_iva")
+
 
 def parsear_detalle(html: str) -> dict[str, Any]:
     """Devuelve los campos que se logren extraer de una página de detalle."""
@@ -100,6 +105,18 @@ def parsear_detalle(html: str) -> dict[str, Any]:
         texto_desc = "\n".join(p for p in parrafos if p)
         if texto_desc:
             out["descripcion"] = texto_desc
+
+    # --- 2b) Resumen ESTRUCTURADO del panel (og:description) ---
+    # El og:description es el resumen del panel "DETALLE" ("X Recámaras Y 1/2baños
+    # $precio"): la fuente LIMPIA de los atributos numéricos. El cuerpo libre (paso
+    # 3) tiene números sueltos del panel y de la prosa que confunden —p. ej. el
+    # panel renderiza "… 2 Baños 2.5 …" y un parseo del cuerpo agarra el "2" en vez
+    # del "2.5" real—. Por eso el resumen se parsea aparte y MANDA sobre el cuerpo.
+    if desc_meta:
+        campos_resumen = parsear_caption(desc_meta)
+        for k in _ATRIB_PANEL:
+            if k in campos_resumen:
+                out.setdefault(k, campos_resumen[k])
 
     # --- 3) Texto visible: caption-style + chips ---
     texto = sopa.get_text(" ", strip=True)

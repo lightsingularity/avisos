@@ -229,6 +229,28 @@ def test_evento_trans_corrige_transaccion(tmp_path):
     assert fila == ("venta", 20_800_000)
 
 
+def test_evento_attrs_corrige_atributos(tmp_path):
+    # El evento `attrs` (backfill, re-lee el panel del detalle) corrige atributos
+    # numéricos de un aviso existente (medio baño que el índice perdió). No toca
+    # otras columnas ni acepta columnas fuera de la whitelist.
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([
+        {"e": "alta", "f": "2026-06-25", "id": "D",
+         "datos": {"tipo_transaccion": "venta", "tipo_inmueble": "departamento",
+                   "zona": "VALLE", "banos": 3.0, "recamaras": 3.0,
+                   "precio": 9_000_000, "precio_unidad": "total",
+                   "url": "http://x/D"}, "fotos": []},
+        {"e": "attrs", "f": "2026-06-28", "id": "D",
+         "attrs": {"banos": 3.5, "tipo_transaccion": "renta"}},  # trans NO está en la whitelist
+    ], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    fila = con.execute(
+        "SELECT banos, recamaras, tipo_transaccion FROM avisos WHERE id_aviso='D'").fetchone()
+    assert fila[0] == 3.5            # corregido
+    assert fila[1] == 3.0            # intacto
+    assert fila[2] == "venta"        # la whitelist ignoró el intento de cambiar la transacción
+
+
 def test_precio_placeholder_no_entra_a_analisis(tmp_path):
     def _alta(idv, precio, trans="venta"):
         return {"e": "alta", "f": "2026-06-25", "id": idv,
