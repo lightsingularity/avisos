@@ -84,9 +84,15 @@ busqueda = st.sidebar.text_input(
     placeholder="p. ej. industrial, estacionamiento",
     help="Busca dentro del texto libre del anuncio (no tiene columna propia).",
 )
+etiquetas = st.sidebar.multiselect(
+    "Etiquetas", ops.get("etiquetas", []),
+    help="Atributos detectados en el texto del anuncio (p. ej. acceso controlado, "
+         "amueblado, terreno industrial). Se piden TODAS las elegidas.",
+)
 
 df = an.aplicar_filtros(df_todo, trans, tipos, zonas, colonias)
 df = an.buscar_descripcion(df, busqueda)
+df = an.filtrar_por_etiquetas(df, etiquetas)
 ids = set(df["id_aviso"])
 hist = hist_todo[hist_todo["id_aviso"].isin(ids)]
 
@@ -207,7 +213,7 @@ with tab_datos:
             "precio_actual", "precio_unidad", "precio_m2_construccion",
             "precio_m2_terreno", "recamaras", "banos", "m2_construccion",
             "m2_terreno", "dias_en_mercado", "num_cambios_precio",
-            "fecha_primera_vista", "fecha_baja", "url", "descripcion"]
+            "fecha_primera_vista", "fecha_baja", "url", "etiquetas", "descripcion"]
     vista = df[cols].sort_values("precio_actual", ascending=False)
     st.dataframe(vista, use_container_width=True, height=460)
     st.download_button(

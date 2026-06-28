@@ -9,6 +9,7 @@ import sqlite3
 from pathlib import Path
 
 from .events import leer_eventos
+from .tags import etiquetas as _etiquetas
 
 RUTA_DB = Path(__file__).resolve().parent.parent / "data" / "avisos.db"
 
@@ -100,6 +101,11 @@ CREATE TABLE fotos (
     ruta_local TEXT,
     PRIMARY KEY (id_aviso, url_foto)
 );
+CREATE TABLE tags (
+    id_aviso TEXT NOT NULL,
+    tag      TEXT NOT NULL,
+    PRIMARY KEY (id_aviso, tag)
+);
 CREATE TABLE corridas (
     fecha        TEXT PRIMARY KEY,
     vistos       INTEGER,
@@ -111,6 +117,7 @@ CREATE TABLE corridas (
 );
 CREATE INDEX idx_avisos_zona ON avisos(zona, tipo_inmueble, tipo_transaccion);
 CREATE INDEX idx_hist_aviso ON historial_precios(id_aviso, fecha);
+CREATE INDEX idx_tags_tag ON tags(tag);
 
 -- Vista principal para análisis: último precio + métricas derivadas.
 CREATE VIEW analisis AS
@@ -153,8 +160,26 @@ def reconstruir(ruta_db: Path = RUTA_DB, dir_eventos=None) -> sqlite3.Connection
     kw = {"dir_eventos": dir_eventos} if dir_eventos else {}
     for ev in leer_eventos(**kw):
         _aplicar(con, ev)
+    _derivar_tags(con)
     con.commit()
     return con
+
+
+def _derivar_tags(con: sqlite3.Connection) -> None:
+    """Recalcula la tabla `tags` desde la descripción (artefacto derivado).
+
+    Se ejecuta tras reproducir la bitácora, sobre la descripción ya consolidada
+    de cada aviso. Editar el catálogo (scraper/tags.py) y reconstruir basta para
+    re-etiquetar; no hay que re-scrapear ni versionar nada."""
+    con.execute("DELETE FROM tags")
+    filas = con.execute(
+        "SELECT id_aviso, descripcion FROM avisos "
+        "WHERE descripcion IS NOT NULL AND descripcion <> ''"
+    ).fetchall()
+    con.executemany(
+        "INSERT OR IGNORE INTO tags VALUES (?, ?)",
+        [(idv, tag) for idv, desc in filas for tag in _etiquetas(desc)],
+    )
 
 
 def _aplicar(con: sqlite3.Connection, ev: dict) -> None:

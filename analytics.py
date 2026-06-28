@@ -22,8 +22,17 @@ from scraper.db import MIN_M2_TERRENO, TIPOS_CONSTRUCCION, TIPOS_TERRENO
 
 # ----------------------------- carga -----------------------------------
 def cargar_analisis(con: sqlite3.Connection) -> pd.DataFrame:
-    """La vista `analisis`: una fila por aviso con precio actual y derivados."""
-    return pd.read_sql_query("SELECT * FROM analisis", con)
+    """La vista `analisis`: una fila por aviso con precio actual y derivados.
+
+    Adjunta `etiquetas`: las tags derivadas de la descripción, unidas por '|'
+    (una sola cadena por aviso) para filtrar/mostrar sin multiplicar las filas."""
+    return pd.read_sql_query(
+        "SELECT analisis.*, "
+        "(SELECT group_concat(tag, '|') FROM tags "
+        "  WHERE tags.id_aviso = analisis.id_aviso) AS etiquetas "
+        "FROM analisis",
+        con,
+    )
 
 
 def cargar_historial(con: sqlite3.Connection) -> pd.DataFrame:
@@ -47,11 +56,14 @@ def opciones(con: sqlite3.Connection) -> dict[str, list[str]]:
             f"WHERE {col} IS NOT NULL AND {col} <> '' ORDER BY {col}"
         ).fetchall()
         return [r[0] for r in rows]
+    etiquetas = [r[0] for r in con.execute(
+        "SELECT DISTINCT tag FROM tags ORDER BY tag").fetchall()]
     return {
         "transacciones": distintos("tipo_transaccion"),
         "tipos": distintos("tipo_inmueble"),
         "zonas": distintos("zona"),
         "colonias": distintos("colonia"),
+        "etiquetas": etiquetas,
     }
 
 
@@ -85,6 +97,24 @@ def buscar_descripcion(df: pd.DataFrame, palabra: str) -> pd.DataFrame:
     if not palabra:
         return df
     return df[df["descripcion"].fillna("").str.contains(palabra, case=False, regex=False)]
+
+
+def filtrar_por_etiquetas(df: pd.DataFrame, seleccion, modo: str = "todas") -> pd.DataFrame:
+    """Avisos que tienen las etiquetas seleccionadas (None/vacío = sin filtrar).
+
+    modo 'todas' (AND: las cumple todas) o 'alguna' (OR: al menos una). Las
+    etiquetas viven en la columna `etiquetas` unidas por '|'.
+    """
+    if not seleccion:
+        return df
+    sel = set(seleccion)
+    conjuntos = (df["etiquetas"].fillna("")
+                 .apply(lambda s: {t for t in s.split("|") if t}))
+    if modo == "alguna":
+        mask = conjuntos.apply(lambda s: bool(s & sel))
+    else:
+        mask = conjuntos.apply(lambda s: sel <= s)
+    return df[mask]
 
 
 # --------------------------- agregaciones --------------------------------
