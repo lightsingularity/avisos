@@ -126,6 +126,15 @@ listings only**) via `analytics.py`.
   vista ya saca $/m² = total / m2_terreno. (Aparte, un `m2_terreno` mal capturado
   —p. ej. 8 m²— inflaría el $/m²; la vista NO computa $/m² si el área es menor a
   `MIN_M2_TERRENO` (50 m²): ningún suelo real es tan chico.)
+- **Anuncios dobles venta/renta (renta con precio de venta):** un anuncio "en venta
+  o renta" (p. ej. un PH venta $20.8M / renta $125k) el sitio lo archiva en la
+  categoría de RENTA —su `K_Cla2` dice renta— pero su precio principal es el de
+  VENTA. Queda una "renta" con precio de venta. `db.reinterpretar_transaccion`
+  reclasifica a `venta` cualquier renta TOTAL ≥ `TECHO_RENTA_TOTAL` ($3M) al
+  reconstruir (en el corpus, las rentas reales más altas —naves grandes— rondan
+  $1.3M y los precios de venta mal archivados arrancan en ~$10M: hueco enorme). Así
+  precio y transacción quedan coherentes. La **bitácora conserva** la transacción
+  original (fiel al sitio); solo la **base derivada** la corrige.
 
 ---
 
