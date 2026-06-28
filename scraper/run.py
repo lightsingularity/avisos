@@ -243,7 +243,12 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
                     # de quedar 'terreno'.
                     if not rec.get("_tipo_fiable") and extra.get("tipo_inmueble"):
                         datos["tipo_inmueble"] = extra["tipo_inmueble"]
-                    if not rec.get("_trans_fiable") and extra.get("tipo_transaccion"):
+                    # La transacción del DETALLE (página canónica del aviso, og:title
+                    # "Se vende/renta…") manda sobre la del índice. En anuncios DOBLES
+                    # venta/renta el sitio archiva el aviso en la categoría de RENTA
+                    # (su K_Cla2 dice renta) pero su precio principal y su detalle son
+                    # los de VENTA; el detalle desempata a favor de lo coherente.
+                    if extra.get("tipo_transaccion"):
                         datos["tipo_transaccion"] = extra["tipo_transaccion"]
                     for k in _ATRIB_DETALLE:
                         if k in extra:

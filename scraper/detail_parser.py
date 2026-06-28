@@ -64,8 +64,17 @@ def parsear_detalle(html: str) -> dict[str, Any]:
 
     og_title = _meta("og:title")
     doc_title = sopa.title.get_text(strip=True) if sopa.title else None
-    titulo = out.pop("_titulo_jsonld", None) or og_title or doc_title
-    trans, tipo = clasificar_titulo(titulo)
+    jsonld_name = out.pop("_titulo_jsonld", None)
+    # La transacción/tipo viven en el título ESTRUCTURADO ("Se {trans} {tipo} en
+    # {ZONA}") del og:title / <title>. El `name` de JSON-LD suele ser marketing
+    # ("Espectacular Penthouse con las mejores vistas…") que NO clasifica y, si se
+    # probara primero, sombrearía al og:title y dejaría sin transacción a anuncios
+    # válidos (verificado en vivo). Por eso el og:title manda y el JSON-LD respalda.
+    trans = tipo = None
+    for candidato in (og_title, doc_title, jsonld_name):
+        trans, tipo = clasificar_titulo(candidato)
+        if trans or tipo:
+            break
     if trans:
         out["tipo_transaccion"] = trans
     if tipo:

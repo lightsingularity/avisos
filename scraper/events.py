@@ -8,6 +8,8 @@ Tipos de evento:
   realta  {"e":"realta","f":"...","id":"..."}          # reapareció tras una baja
   desc    {"e":"desc","f":"...","id":"...","desc":"..."} # backfill de descripción
                                                           # (no toca precio ni fechas)
+  trans   {"e":"trans","f":"...","id":"...","trans":"venta"} # backfill: corrige la
+                                                          # transacción (re-leída del detalle)
   corrida {"e":"corrida","f":"...","vistos":N,"altas":N,"bajas":N,
            "cambios":N,"errores":N,"duracion_seg":N}
 
