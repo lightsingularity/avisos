@@ -280,16 +280,18 @@ def _registro_rico(obj: dict, trans, tipo, zona, clasif: "Clasificacion | None" 
     if col:
         rec["colonia"] = col
 
-    # Precio: m2Precio>0 => por m² (terrenos); si es USD lo OMITIMOS (no hay
-    # columna de moneda y mezclarlo con MXN falsearía $/m²). Para los avisos que
-    # también están en el sitemap, ese precio (MXN, fiable) prevalece en run.py.
-    if not obj.get("USD"):
-        por_m2 = _pos(obj.get("m2Precio"))
-        total = _pos(obj.get("Precio"))
-        if por_m2:
-            rec["precio"], rec["precio_unidad"] = int(por_m2), "m2"
-        elif total:
-            rec["precio"], rec["precio_unidad"] = int(total), "total"
+    # Precio: m2Precio>0 => por m² (terrenos); si no, el total. La MONEDA se guarda
+    # nativa (no se dropea ni se convierte): el flag `USD` del índice es una pista
+    # (NO fiable: deja pasar dólares como MXN), así que el DETALLE la confirma/pisa
+    # en run.py. Por defecto MXN.
+    por_m2 = _pos(obj.get("m2Precio"))
+    total = _pos(obj.get("Precio"))
+    if por_m2:
+        rec["precio"], rec["precio_unidad"] = int(por_m2), "m2"
+    elif total:
+        rec["precio"], rec["precio_unidad"] = int(total), "total"
+    if "precio" in rec and obj.get("USD"):
+        rec["precio_moneda"] = "USD"
 
     for col_db, clave in _MAPA_ATRIB:
         v = _pos(obj.get(clave))

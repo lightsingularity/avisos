@@ -93,6 +93,47 @@ def test_detalle_banos_del_resumen_estructurado_gana_al_cuerpo():
     assert out["recamaras"] == 3.0
 
 
+def test_detalle_detecta_usd_por_texto():
+    # "$X Dólares" / "DLLS/MTS2" en la descripción -> moneda USD (señal fiable).
+    out = parsear_detalle(_detalle_html(
+        descripcion_larga="970 m2 esquina $1,455,000 Dólares $1,500 DLLS/MTS2"))
+    assert out["precio_moneda"] == "USD"
+
+
+def test_detalle_detecta_usd_por_pricecurrency():
+    html = ('<html><head><title>Se vende terreno en VALLE | x</title>'
+            '<meta property="og:title" content="Se vende terreno en VALLE">'
+            '<script type="application/ld+json">{"@type":"Product","offers":'
+            '{"@type":"Offer","price":"1455000","priceCurrency":"USD"}}</script>'
+            '</head><body></body></html>')
+    out = parsear_detalle(html)
+    assert out["precio_moneda"] == "USD" and out["precio"] == 1_455_000
+
+
+def test_detalle_default_mxn_sin_señal():
+    out = parsear_detalle(_detalle_html(descripcion_larga="Casa bonita de 200 m2"))
+    assert out.get("precio_moneda", "MXN") == "MXN"
+
+
+def test_detalle_marca_usd_y_se_guarda(monkeypatch, tmp_path):
+    # Un aviso del índice cuyo DETALLE dice dólares queda con moneda USD en la base.
+    cfg = {"detalle": "nunca", "usar_indice": True,
+           "indice": {"enriquecer_cola": "todos"}}
+    monkeypatch.setattr(evmod, "DIR_EVENTOS", tmp_path / "eventos")
+    cliente = _ClienteDetalle(_detalle_html(
+        zona="VALLE", colonia="X",
+        descripcion_larga="$1,455,000 Dólares 970 m2 $1,500 DLLS/MTS2"))
+    monkeypatch.setattr(runmod, "ClienteEducado", lambda **kw: cliente)
+    monkeypatch.setattr(runmod, "descargar_sitemap", lambda c: _sitemap_dummy())
+    monkeypatch.setattr(runmod, "cosechar_indice",
+                        lambda c, cfg=None, categorias_historicas=None: _indice_rico())
+    assert runmod.correr(cfg, fecha="2026-06-20") == 0
+    con = dbmod.reconstruir(tmp_path / "avisos.db", dir_eventos=tmp_path / "eventos")
+    m = con.execute(
+        "SELECT precio_moneda FROM analisis WHERE id_aviso='32360002'").fetchone()[0]
+    assert m == "USD"
+
+
 def test_detalle_descripcion_completa_no_solo_el_resumen():
     # La sección "DESCRIPCIÓN" trae el texto libre del vendedor (lote industrial,
     # cajones de estacionamiento…); no debe quedarse con el resumen corto.

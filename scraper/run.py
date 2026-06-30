@@ -201,7 +201,8 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
                 p_nuevo != previo.get("precio") or u_nueva != previo.get("unidad")
             ):
                 eventos.append({"e": "precio", "f": hoy, "id": e.id_aviso,
-                                "precio": p_nuevo, "unidad": u_nueva})
+                                "precio": p_nuevo, "unidad": u_nueva,
+                                "moneda": previo.get("moneda", "MXN")})
                 n_cambios += 1
 
     # ---------------- altas / cambios desde el índice (avisos no vistos en sitemap) ----------------
@@ -250,6 +251,11 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
                     # los de VENTA; el detalle desempata a favor de lo coherente.
                     if extra.get("tipo_transaccion"):
                         datos["tipo_transaccion"] = extra["tipo_transaccion"]
+                    # Moneda: el DETALLE la confirma (priceCurrency / "Dólares" en el
+                    # texto). El flag USD del índice no es fiable; si el detalle
+                    # detecta USD, manda. Si no, se conserva la pista del índice.
+                    if extra.get("precio_moneda"):
+                        datos["precio_moneda"] = extra["precio_moneda"]
                     # Atributos numéricos: el DETALLE (resumen estructurado del
                     # panel) MANDA sobre el índice. El índice subcuenta los medios
                     # baños (Banios sin MedBan): da 3.0 donde el panel dice 3.5. El
@@ -274,8 +280,12 @@ def correr(cfg: dict, fecha: str | None = None) -> int:
             if p_nuevo is not None and (
                 p_nuevo != previo.get("precio") or u_nueva != previo.get("unidad")
             ):
+                # Conserva la moneda ya conocida (confirmada por el detalle) salvo que
+                # el índice ahora la marque USD; sin esto un cambio de precio relabelaría
+                # a MXN un aviso en dólares (no se revisita el detalle de los conocidos).
+                moneda = rec.get("precio_moneda") or previo.get("moneda", "MXN")
                 eventos.append({"e": "precio", "f": hoy, "id": idv,
-                                "precio": p_nuevo, "unidad": u_nueva})
+                                "precio": p_nuevo, "unidad": u_nueva, "moneda": moneda})
                 n_cambios += 1
 
     # ---------------- bajas (con resguardo ante fallos parciales) ----------------

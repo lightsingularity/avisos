@@ -38,7 +38,7 @@ def cargar_analisis(con: sqlite3.Connection) -> pd.DataFrame:
 def cargar_historial(con: sqlite3.Connection) -> pd.DataFrame:
     """Cada punto de precio observado, con atributos del aviso para agregaciones."""
     return pd.read_sql_query(
-        """SELECT h.id_aviso, h.fecha, h.precio, h.unidad,
+        """SELECT h.id_aviso, h.fecha, h.precio, h.unidad, h.moneda,
                   a.tipo_transaccion, a.tipo_inmueble, a.zona, a.colonia,
                   a.m2_construccion, a.m2_terreno
              FROM historial_precios h
@@ -117,15 +117,31 @@ def filtrar_por_etiquetas(df: pd.DataFrame, seleccion, modo: str = "todas") -> p
     return df[mask]
 
 
+# ----------------------------- moneda -----------------------------------
+def por_moneda(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Divide el DataFrame por moneda (MXN, USD…). Nunca se mezclan monedas en una
+    misma mediana: el sitio cotiza muchos terrenos en USD y un total mezclado no
+    significa nada. Devuelve {moneda: subDataFrame}, MXN primero."""
+    col = "precio_moneda" if "precio_moneda" in df.columns else "moneda"
+    if col not in df.columns:
+        return {"MXN": df}
+    monedas = sorted(df[col].dropna().unique(), key=lambda m: (m != "MXN", m))
+    return {m: df[df[col] == m] for m in monedas}
+
+
 # --------------------------- agregaciones --------------------------------
-def serie_mensual(hist: pd.DataFrame, modo: str = "total") -> pd.DataFrame:
+def serie_mensual(hist: pd.DataFrame, modo: str = "total", moneda: str = "MXN") -> pd.DataFrame:
     """Mediana mensual de precio. modo: 'total' | 'm2_construccion' | 'm2_terreno'.
 
-    Devuelve columnas [mes, mediana, n]. 'mes' es el primer día del mes.
+    Una sola `moneda` (no se mezclan en un eje). Devuelve [mes, mediana, n].
     """
     if hist.empty:
         return pd.DataFrame(columns=["mes", "mediana", "n"])
     h = hist.copy()
+    if "moneda" in h.columns:
+        h = h[h["moneda"] == moneda]
+        if h.empty:
+            return pd.DataFrame(columns=["mes", "mediana", "n"])
 
     if modo == "total":
         h = h[h["unidad"] == "total"]
@@ -172,9 +188,12 @@ def stats_tiempo_en_mercado(df: pd.DataFrame) -> dict:
     }
 
 
-def stats_cambios_precio(hist: pd.DataFrame) -> dict:
-    """Comparación primer vs último precio por aviso (solo unidad 'total')."""
-    h = hist[hist["unidad"] == "total"].sort_values(["id_aviso", "fecha"])
+def stats_cambios_precio(hist: pd.DataFrame, moneda: str = "MXN") -> dict:
+    """Comparación primer vs último precio por aviso (solo unidad 'total', una moneda)."""
+    h = hist[hist["unidad"] == "total"]
+    if "moneda" in h.columns:
+        h = h[h["moneda"] == moneda]
+    h = h.sort_values(["id_aviso", "fecha"])
     if h.empty:
         return {"n": 0, "con_cambio": 0, "con_baja": 0,
                 "mediana_baja_pct": None, "mediana_baja_mxn": None}

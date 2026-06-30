@@ -24,6 +24,11 @@ st.set_page_config(page_title="Mercado inmobiliario · Monterrey",
                    page_icon="🏠", layout="wide")
 
 MXN = lambda x: "—" if x is None or pd.isna(x) else f"${x:,.0f}"
+# El sitio cotiza muchos terrenos en USD (común en MTY): se muestran en su moneda
+# nativa, nunca convertidos ni mezclados con pesos en una misma mediana.
+_SIMBOLO = {"MXN": "$", "USD": "US$"}
+def dinero(x, moneda="MXN"):
+    return "—" if x is None or pd.isna(x) else f"{_SIMBOLO.get(moneda, '$')}{x:,.0f}"
 
 
 # ---------------------- datos (con caché por huella) ---------------------
@@ -99,19 +104,43 @@ hist = hist_todo[hist_todo["id_aviso"].isin(ids)]
 # ------------------------------ encabezado -------------------------------
 st.title("Investigación de mercado inmobiliario")
 ultima = df_todo["fecha_ultima_vista"].max()
-st.caption(f"{len(df_todo):,} avisos en el histórico · última captura: {ultima} · "
-           f"segmento filtrado: {len(df):,} avisos")
 
 if df.empty:
     st.warning("Ningún aviso coincide con los filtros. Afloja algún criterio.")
     st.stop()
 
-r = an.resumen_segmento(df)
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Avisos en segmento", f"{r['n_avisos']:,}")
-c2.metric("Mediana precio total", MXN(r["mediana_precio"]))
-c3.metric("Mediana $/m² construcción", MXN(r["mediana_m2_construccion"]))
-c4.metric("Mediana $/m² terreno", MXN(r["mediana_m2_terreno"]))
+# Segmentación por moneda: nunca se mezclan pesos y dólares en una mediana.
+segs = an.por_moneda(df)
+mezcla = " · ".join(f"{len(s):,} {m}" for m, s in segs.items())
+st.caption(f"{len(df_todo):,} avisos en el histórico · última captura: {ultima} · "
+           f"segmento filtrado: {len(df):,} avisos ({mezcla})")
+
+df_mxn = segs.get("MXN", df.iloc[0:0])
+hay_usd = "USD" in segs and not segs["USD"].empty
+
+
+def _tarjetas(sub, moneda):
+    r = an.resumen_segmento(sub)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(f"Avisos ({moneda})", f"{r['n_avisos']:,}")
+    c2.metric("Mediana precio total", dinero(r["mediana_precio"], moneda))
+    c3.metric("Mediana $/m² construcción", dinero(r["mediana_m2_construccion"], moneda))
+    c4.metric("Mediana $/m² terreno", dinero(r["mediana_m2_terreno"], moneda))
+
+
+if not df_mxn.empty:
+    _tarjetas(df_mxn, "MXN")
+if hay_usd:
+    st.caption("💵 Mercado en **dólares** (no se mezcla con los pesos):")
+    _tarjetas(segs["USD"], "USD")
+
+# Las gráficas usan UNA moneda por eje (escalas no comparables): MXN si la hay.
+moneda_g = "MXN" if not df_mxn.empty else next(iter(segs))
+df_g = segs.get(moneda_g, df)
+hist_g = hist[hist["moneda"] == moneda_g] if "moneda" in hist.columns else hist
+if hay_usd and moneda_g == "MXN":
+    st.caption(f"Las gráficas de abajo muestran el mercado en **MXN**; "
+               f"hay {len(segs['USD']):,} avisos en USD (ver tarjetas y tabla).")
 
 st.divider()
 
@@ -123,7 +152,7 @@ tab_dist, tab_tend, tab_tom, tab_comp, tab_datos = st.tabs(
 
 # --- Distribución de precios ---
 with tab_dist:
-    tot = an.solo_total(df)
+    tot = an.solo_total(df_g)
     if tot.empty:
         st.info("El segmento no tiene avisos con precio total (¿solo terrenos por m²?). "
                 "Revisa la pestaña Tendencias con la métrica de $/m² de terreno.")
@@ -131,16 +160,16 @@ with tab_dist:
         p = tot["precio_actual"].dropna()
         lo, hi = p.quantile(0.01), p.quantile(0.99)
         fig = px.histogram(tot[(p >= lo) & (p <= hi)], x="precio_actual", nbins=40,
-                           labels={"precio_actual": "Precio (MXN)"})
+                           labels={"precio_actual": f"Precio ({moneda_g})"})
         fig.update_layout(yaxis_title="Avisos", bargap=0.05,
                           margin=dict(t=10, b=10, l=10, r=10))
         st.plotly_chart(fig, use_container_width=True)
         a1, a2, a3 = st.columns(3)
-        a1.metric("Mínimo (p01)", MXN(lo))
-        a2.metric("Mediana", MXN(p.median()))
-        a3.metric("Máximo (p99)", MXN(hi))
-        st.caption("Recortado a percentiles 1–99 para legibilidad; las métricas de "
-                   "arriba usan el segmento completo.")
+        a1.metric("Mínimo (p01)", dinero(lo, moneda_g))
+        a2.metric("Mediana", dinero(p.median(), moneda_g))
+        a3.metric("Máximo (p99)", dinero(hi, moneda_g))
+        st.caption(f"Mercado en {moneda_g}. Recortado a percentiles 1–99 para "
+                   "legibilidad; las métricas de arriba usan el segmento completo.")
 
 # --- Tendencias ---
 with tab_tend:
@@ -152,12 +181,12 @@ with tab_tend:
                      "m2_terreno": "Precio por m² (terreno)"}.get,
         horizontal=True,
     )
-    serie = an.serie_mensual(hist, modo)
+    serie = an.serie_mensual(hist_g, modo, moneda_g)
     if len(serie) < 1:
         st.info("Sin datos suficientes para esta métrica todavía.")
     else:
         fig = px.line(serie, x="mes", y="mediana", markers=True,
-                      labels={"mes": "Mes", "mediana": "Mediana (MXN)"})
+                      labels={"mes": "Mes", "mediana": f"Mediana ({moneda_g})"})
         fig.update_layout(margin=dict(t=10, b=10, l=10, r=10))
         st.plotly_chart(fig, use_container_width=True)
         st.caption("Mediana mensual de los precios observados en el segmento. "
@@ -169,7 +198,7 @@ with tab_tend:
 # --- Tiempo en mercado y cambios de precio ---
 with tab_tom:
     tom = an.stats_tiempo_en_mercado(df)
-    camb = an.stats_cambios_precio(hist)
+    camb = an.stats_cambios_precio(hist_g, moneda_g)
     c1, c2, c3 = st.columns(3)
     c1.metric("Activos", f"{tom.get('n_activos', 0):,}")
     c2.metric("Dados de baja", f"{tom.get('n_cerrados', 0):,}")
@@ -191,7 +220,7 @@ with tab_tom:
 with tab_comp:
     st.markdown("Compara dos zonas (o colonias) dentro del segmento filtrado.")
     dim = st.radio("Dimensión", ["zona", "colonia"], horizontal=True)
-    valores = sorted(df[dim].dropna().unique().tolist())
+    valores = sorted(df_g[dim].dropna().unique().tolist())
     if len(valores) < 2:
         st.info(f"Hacen falta al menos dos {dim}s en el segmento para comparar. "
                 "Quita filtros de zona/colonia o amplía el tipo de inmueble.")
@@ -202,15 +231,17 @@ with tab_comp:
         if a == b:
             st.warning("Elige dos valores distintos.")
         else:
-            tabla = an.comparar(df, dim, a, b)
-            st.dataframe(tabla.style.format(lambda v: MXN(v) if isinstance(v, (int, float))
+            tabla = an.comparar(df_g, dim, a, b)
+            st.caption(f"Mercado en {moneda_g}.")
+            st.dataframe(tabla.style.format(lambda v: dinero(v, moneda_g)
+                                            if isinstance(v, (int, float))
                                             and v is not None else v),
                          use_container_width=True)
 
 # --- Datos / Exportar ---
 with tab_datos:
     cols = ["id_aviso", "tipo_transaccion", "tipo_inmueble", "zona", "colonia",
-            "precio_actual", "precio_unidad", "precio_m2_construccion",
+            "precio_actual", "precio_unidad", "precio_moneda", "precio_m2_construccion",
             "precio_m2_terreno", "recamaras", "banos", "m2_construccion",
             "m2_terreno", "dias_en_mercado", "num_cambios_precio",
             "fecha_primera_vista", "fecha_baja", "url", "etiquetas", "descripcion"]

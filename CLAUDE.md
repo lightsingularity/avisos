@@ -121,7 +121,15 @@ listings only**) via `analytics.py`.
   `backfill_atributos.py`) re-lee el panel y corrige.
 - **Tests assert INVARIANTS** against real fixtures, which `calibrate.py`
   overwrites each run. Don't pin exact counts/ids (`tests/test_indice.py`).
-- **USD listings:** price omitted (no currency column); MXN only.
+- **USD listings:** el sitio cotiza muchos terrenos en USD (común en MTY). Se guarda
+  la **moneda nativa** (`historial_precios.moneda`, MXN por defecto), nunca se dropea
+  ni se convierte. El flag `USD` del índice **no es fiable** (dejó pasar dólares como
+  MXN → 17x subvaluado); el **DETALLE manda**: `priceCurrency` del JSON-LD y, sobre
+  todo, "$X Dólares" / "DLLS/MTS2" en el texto (`detail_parser._RX_USD`). Las medianas
+  **nunca mezclan monedas** (`analytics.por_moneda`); el tablero muestra MXN y USD en
+  tarjetas separadas y las gráficas usan una sola moneda. Los umbrales de plausibilidad
+  (`PISO_PRECIO_TOTAL`, `TECHO_PRECIO_M2`) se escalan a USD con `_ESCALA_USD` (~20, NO
+  es tipo de cambio: solo umbral). Backfill: evento `moneda` (`backfill_moneda.py`).
 - **Precios placeholder:** el sitio sirve precios basura cuando el anunciante deja el
   precio "a consultar" (venta $4, terreno $450…). `db.precio_valido` los descarta al
   reconstruir la SQLite (pisos del precio TOTAL por transacción: venta ≥ $100k,
