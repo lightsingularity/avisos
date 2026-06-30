@@ -32,15 +32,26 @@ MIN_M2_TERRENO = 50
 # de verdad); esto solo filtra la SQLite reconstruida y es ajustable aquí.
 PISO_PRECIO_TOTAL = {"venta": 100_000, "traspaso": 10_000, "renta": 1_000}
 
+# Factor GRUESO para escalar los umbrales de PLAUSIBILIDAD (pisos de precio, techo
+# de $/m²) a montos en USD, que son ~20x más chicos en número. NO es un tipo de
+# cambio para convertir precios: nunca se muestra ni altera el precio; la bitácora
+# y el tablero guardan/exhiben la moneda NATIVA. Solo sirve para que los umbrales
+# calibrados en pesos no rechacen/mal-reinterpreten precios legítimos en dólares.
+_ESCALA_USD = 20
 
-def precio_valido(precio, unidad, transaccion) -> bool:
+
+def precio_valido(precio, unidad, transaccion, moneda="MXN") -> bool:
     """False si un precio 'total' cae por debajo del piso de su transacción (un
     placeholder implausible). Los precios por m² (terrenos) usan otra escala y no se
     filtran aquí; un precio nulo se deja pasar (no hay nada que registrar)."""
     if unidad != "total" or precio is None:
         return True
     piso = PISO_PRECIO_TOTAL.get(transaccion)
-    return piso is None or precio >= piso
+    if piso is None:
+        return True
+    if moneda == "USD":
+        piso /= _ESCALA_USD
+    return precio >= piso
 
 
 # Techo de plausibilidad del precio POR m² (MXN/m²). El sitio a veces mete el precio
@@ -52,9 +63,10 @@ def precio_valido(precio, unidad, transaccion) -> bool:
 TECHO_PRECIO_M2 = 100_000
 
 
-def normalizar_unidad(precio, unidad):
+def normalizar_unidad(precio, unidad, moneda="MXN"):
     """Reinterpreta un 'precio por m²' implausiblemente alto como precio total."""
-    if unidad == "m2" and precio is not None and precio > TECHO_PRECIO_M2:
+    techo = TECHO_PRECIO_M2 / _ESCALA_USD if moneda == "USD" else TECHO_PRECIO_M2
+    if unidad == "m2" and precio is not None and precio > techo:
         return precio, "total"
     return precio, unidad
 
@@ -92,6 +104,7 @@ CREATE TABLE historial_precios (
     fecha    TEXT NOT NULL,
     precio   INTEGER NOT NULL,
     unidad   TEXT NOT NULL DEFAULT 'total',
+    moneda   TEXT NOT NULL DEFAULT 'MXN',
     PRIMARY KEY (id_aviso, fecha)
 );
 CREATE TABLE fotos (
@@ -124,6 +137,7 @@ CREATE VIEW analisis AS
 SELECT a.*,
        h.precio          AS precio_actual,
        h.unidad          AS precio_unidad,
+       h.moneda          AS precio_moneda,
        CAST(julianday(COALESCE(a.fecha_baja, date('now')))
             - julianday(a.fecha_primera_vista) AS INTEGER) AS dias_en_mercado,
        CASE WHEN h.unidad = 'total' AND a.m2_construccion > 0
@@ -201,11 +215,13 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
             [ev["id"]] + [d.get(c) for c in _CAMPOS_AVISO] + [f, f],
         )
         if "precio" in d:
-            precio, unidad = normalizar_unidad(d["precio"], d.get("precio_unidad", "total"))
-            if precio_valido(precio, unidad, d.get("tipo_transaccion")):
+            moneda = d.get("precio_moneda", "MXN")
+            precio, unidad = normalizar_unidad(d["precio"], d.get("precio_unidad", "total"), moneda)
+            if precio_valido(precio, unidad, d.get("tipo_transaccion"), moneda):
                 con.execute(
-                    "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
-                    (ev["id"], f, precio, unidad),
+                    "INSERT OR REPLACE INTO historial_precios "
+                    "(id_aviso, fecha, precio, unidad, moneda) VALUES (?,?,?,?,?)",
+                    (ev["id"], f, precio, unidad, moneda),
                 )
         for i, u in enumerate(ev.get("fotos", []), start=1):
             con.execute(
@@ -215,11 +231,13 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
     elif e == "precio":
         fila = con.execute(
             "SELECT tipo_transaccion FROM avisos WHERE id_aviso=?", (ev["id"],)).fetchone()
-        precio, unidad = normalizar_unidad(ev["precio"], ev.get("unidad", "total"))
-        if precio_valido(precio, unidad, fila[0] if fila else None):
+        moneda = ev.get("moneda", "MXN")
+        precio, unidad = normalizar_unidad(ev["precio"], ev.get("unidad", "total"), moneda)
+        if precio_valido(precio, unidad, fila[0] if fila else None, moneda):
             con.execute(
-                "INSERT OR REPLACE INTO historial_precios VALUES (?,?,?,?)",
-                (ev["id"], f, precio, unidad),
+                "INSERT OR REPLACE INTO historial_precios "
+                "(id_aviso, fecha, precio, unidad, moneda) VALUES (?,?,?,?,?)",
+                (ev["id"], f, precio, unidad, moneda),
             )
         con.execute("UPDATE avisos SET fecha_ultima_vista=? WHERE id_aviso=?", (f, ev["id"]))
     elif e == "desc":
@@ -246,6 +264,12 @@ def _aplicar(con: sqlite3.Connection, ev: dict) -> None:
                 f"UPDATE avisos SET {', '.join(c + '=?' for c in campos)} WHERE id_aviso=?",
                 [ev["attrs"][c] for c in campos] + [ev["id"]],
             )
+    elif e == "moneda":
+        # Corrige la MONEDA de los precios de un aviso existente (backfill) re-leída
+        # del detalle. Para USD mal guardado como MXN: relabela sin tocar el número
+        # (el valor ya era el monto en dólares; solo faltaba la etiqueta).
+        con.execute("UPDATE historial_precios SET moneda=? WHERE id_aviso=?",
+                    (ev["moneda"], ev["id"]))
     elif e == "baja":
         con.execute("UPDATE avisos SET fecha_baja=? WHERE id_aviso=?", (f, ev["id"]))
     elif e == "realta":
@@ -275,6 +299,7 @@ def estado_actual(dir_eventos=None) -> dict[str, dict]:
                 "activo": True,
                 "precio": d.get("precio"),
                 "unidad": d.get("precio_unidad", "total"),
+                "moneda": d.get("precio_moneda", "MXN"),
                 "tiene_datos": bool(d.get("tipo_inmueble") or d.get("precio")),
                 # Categoría del índice (slug, p. ej. "venta-casa-CUMBRES") si vino
                 # de esa fuente; sirve para decidir con seguridad si un aviso
@@ -284,6 +309,10 @@ def estado_actual(dir_eventos=None) -> dict[str, dict]:
         elif e == "precio" and ev["id"] in estado:
             estado[ev["id"]]["precio"] = ev["precio"]
             estado[ev["id"]]["unidad"] = ev.get("unidad", "total")
+            if "moneda" in ev:
+                estado[ev["id"]]["moneda"] = ev["moneda"]
+        elif e == "moneda" and ev["id"] in estado:
+            estado[ev["id"]]["moneda"] = ev["moneda"]
         elif e == "baja" and ev["id"] in estado:
             estado[ev["id"]]["activo"] = False
         elif e == "realta" and ev["id"] in estado:

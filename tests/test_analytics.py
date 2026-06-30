@@ -71,6 +71,28 @@ def test_filtros(con):
     assert set(cumbres["id_aviso"]) == {"C1", "C2"}
 
 
+def test_por_moneda_no_mezcla(tmp_path):
+    # MXN y USD no se mezclan: por_moneda separa, y serie_mensual filtra por moneda.
+    eventos = [
+        _alta("2026-06-01", "M1", tipo_transaccion="venta", tipo_inmueble="terreno",
+              zona="VALLE", m2_terreno=500, precio=10_000_000, precio_unidad="total"),
+        _alta("2026-06-01", "U1", tipo_transaccion="venta", tipo_inmueble="terreno",
+              zona="VALLE", m2_terreno=970, precio=1_455_000, precio_unidad="total",
+              precio_moneda="USD"),
+    ]
+    d = _escribir_eventos(tmp_path, eventos)
+    con = reconstruir(tmp_path / "db.sqlite", dir_eventos=d)
+    df = an.cargar_analisis(con)
+    segs = an.por_moneda(df)
+    assert set(segs) == {"MXN", "USD"}
+    assert set(segs["MXN"]["id_aviso"]) == {"M1"}
+    assert set(segs["USD"]["id_aviso"]) == {"U1"}
+    # serie_mensual por moneda: cada mediana es la de SU moneda (no se mezclan).
+    hist = an.cargar_historial(con)
+    assert an.serie_mensual(hist, "total", "USD")["mediana"].iloc[0] == 1_455_000
+    assert an.serie_mensual(hist, "total", "MXN")["mediana"].iloc[0] == 10_000_000
+
+
 def test_buscar_descripcion(con):
     df = an.cargar_analisis(con)
     # Insensible a mayúsculas/minúsculas

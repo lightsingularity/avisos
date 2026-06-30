@@ -229,6 +229,50 @@ def test_evento_trans_corrige_transaccion(tmp_path):
     assert fila == ("venta", 20_800_000)
 
 
+def test_precio_valido_y_normaliza_por_moneda():
+    # Pisos calibrados en MXN; en USD se escalan ~/20 (no es tipo de cambio, solo
+    # umbral de plausibilidad). Un total USD de $5,000 es válido; $4,000 no.
+    assert dbmod.precio_valido(5_000, "total", "venta", "USD") is True
+    assert dbmod.precio_valido(4_000, "total", "venta", "USD") is False
+    assert dbmod.precio_valido(4_000, "total", "venta", "MXN") is False  # < piso MXN 100k
+    # Techo $/m²: MXN 100k, USD ~5k. $1,500/m² USD se respeta; $50,000/m² USD -> total.
+    assert dbmod.normalizar_unidad(1_500, "m2", "USD") == (1_500, "m2")
+    assert dbmod.normalizar_unidad(50_000, "m2", "USD") == (50_000, "total")
+    assert dbmod.normalizar_unidad(1_500, "m2", "MXN") == (1_500, "m2")
+
+
+def test_evento_moneda_relabela_sin_tocar_numero(tmp_path):
+    # USD mal guardado como MXN: el evento `moneda` relabela el precio sin cambiar
+    # el número (el valor ya era el monto en dólares).
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([
+        {"e": "alta", "f": "2026-06-25", "id": "U",
+         "datos": {"tipo_transaccion": "venta", "tipo_inmueble": "terreno",
+                   "zona": "VALLE", "precio": 1_455_000, "precio_unidad": "total",
+                   "url": "http://x/U"}, "fotos": []},
+        {"e": "moneda", "f": "2026-06-28", "id": "U", "moneda": "USD"},
+    ], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    r = con.execute(
+        "SELECT precio_actual, precio_moneda FROM analisis WHERE id_aviso='U'").fetchone()
+    assert r == (1_455_000, "USD")
+
+
+def test_alta_usd_se_guarda_con_moneda(tmp_path):
+    # Una alta con precio_moneda USD guarda la moneda nativa (no se convierte).
+    eventos = tmp_path / "eventos"
+    evmod.anexar_eventos([{
+        "e": "alta", "f": "2026-06-25", "id": "T",
+        "datos": {"tipo_transaccion": "venta", "tipo_inmueble": "terreno",
+                  "zona": "VALLE", "precio": 1_500, "precio_unidad": "m2",
+                  "precio_moneda": "USD", "m2_terreno": 970.0,
+                  "url": "http://x/T"}, "fotos": []}], dir_eventos=eventos)
+    con = dbmod.reconstruir(tmp_path / "db.sqlite", dir_eventos=eventos)
+    r = con.execute(
+        "SELECT precio_actual, precio_unidad, precio_moneda FROM analisis WHERE id_aviso='T'").fetchone()
+    assert r == (1_500, "m2", "USD")
+
+
 def test_evento_attrs_corrige_atributos(tmp_path):
     # El evento `attrs` (backfill, re-lee el panel del detalle) corrige atributos
     # numéricos de un aviso existente (medio baño que el índice perdió). No toca

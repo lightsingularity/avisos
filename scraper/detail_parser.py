@@ -32,6 +32,13 @@ _RX_ZONA_LBL = re.compile(r"Zona:\s*([^|]+?)\s+Colonia", re.I)
 _ATRIB_PANEL = ("recamaras", "banos", "plantas", "m2_construccion", "m2_terreno",
                 "m2_oficina", "m2_bodega", "metros_frente", "hectareas", "mas_iva")
 
+# Moneda: el sitio cotiza muchos terrenos en USD (práctica común en MTY). El flag
+# del índice NO es fiable (deja pasar USD como si fuera MXN); el DETALLE sí lo dice:
+# priceCurrency del JSON-LD y, sobre todo, "$X Dólares" / "$X DLLS/MTS2" en el texto.
+_MONEDAS_USD = {"USD", "US", "USD$", "DLLS", "DLL", "DOLAR", "DOLARES"}
+# "dólares", "dlls", "dll", "usd", "us$", "u$d", "dls" (evita falsos: exige límite).
+_RX_USD = re.compile(r"d[oó]lares|\bdlls?\b|\busd\b|us\$|u\$d|\bdls\b", re.I)
+
 
 def parsear_detalle(html: str) -> dict[str, Any]:
     """Devuelve los campos que se logren extraer de una página de detalle."""
@@ -54,6 +61,8 @@ def parsear_detalle(html: str) -> dict[str, Any]:
                     out["precio_unidad"] = "total"
                 except ValueError:
                     pass
+                if str(oferta.get("priceCurrency") or "").upper() in _MONEDAS_USD:
+                    out["precio_moneda"] = "USD"
             if obj.get("name"):
                 out["_titulo_jsonld"] = obj["name"]
             if obj.get("description"):
@@ -105,6 +114,13 @@ def parsear_detalle(html: str) -> dict[str, Any]:
         texto_desc = "\n".join(p for p in parrafos if p)
         if texto_desc:
             out["descripcion"] = texto_desc
+
+    # Moneda por texto: "$X Dólares" / "$X DLLS/MTS2" en el resumen o la descripción.
+    # Es la señal fiable (el flag del índice falla). Default MXN (no se marca).
+    if out.get("precio_moneda") != "USD":
+        señal = " ".join(filter(None, (desc_meta, out.get("descripcion"))))
+        if _RX_USD.search(señal):
+            out["precio_moneda"] = "USD"
 
     # --- 2b) Resumen ESTRUCTURADO del panel (og:description) ---
     # El og:description es el resumen del panel "DETALLE" ("X Recámaras Y 1/2baños

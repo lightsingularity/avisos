@@ -12,6 +12,8 @@ Tipos de evento:
                                                           # transacción (re-leída del detalle)
   attrs   {"e":"attrs","f":"...","id":"...","attrs":{"banos":3.5}} # backfill: corrige
                                                           # atributos del panel del detalle
+  moneda  {"e":"moneda","f":"...","id":"...","moneda":"USD"} # backfill: corrige la
+                                                          # moneda del precio (re-leída del detalle)
   corrida {"e":"corrida","f":"...","vistos":N,"altas":N,"bajas":N,
            "cambios":N,"errores":N,"duracion_seg":N}
 
