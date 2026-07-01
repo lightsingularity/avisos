@@ -9,7 +9,37 @@ respect robots.txt. Never commit the SQLite DB.
 
 ---
 
-## Estado actual (2026-06-25) — Plan B IMPLEMENTADO
+## Estado actual (2026-06-30) — DETALLE = FUENTE DE VERDAD
+
+Principio consolidado esta ronda: **el índice es CATÁLOGO (descubrimiento +
+bajas), el detalle es la VERDAD de todo dato por-aviso.** Como visitamos el
+detalle de TODA alta (`enriquecer_cola: todos`), no hay razón de costo para
+confiar en los atributos del índice, que fallan. Lo hecho y MERGEADO a `main`:
+
+- **Descripción libre** capturada del `#id_descripcion` (antes solo el resumen
+  meta). Backfill: **2,147** avisos (`backfill_descripciones.py`, evento `desc`).
+- **Tags buscables** derivados de la descripción (18 reglas curadas en
+  `scraper/tags.py`, tabla `tags`, filtro multiselect en el tablero).
+- **Transacción por el detalle** (og:title "Se vende/renta") sobre el `K_Cla2`
+  del índice → arregla anuncios dobles venta/renta. Backfill: **29** a venta
+  (`backfill_transaccion.py`, evento `trans`). Se **revirtió** el ceiling de
+  precio (era un hack que enmascaraba un bug de precedencia en el parser).
+- **Atributos por el detalle** (resumen ESTRUCTURADO del `og:description`, no el
+  cuerpo libre) sobre el índice → arregla los medios baños que el índice
+  subcuenta (`Banios` sin `MedBan`: 3.0 vs 3.5). Backfill: **1,385**
+  (`backfill_atributos.py`, evento `attrs`).
+- **Moneda nativa (USD)**: columna `moneda` en `historial_precios`; el detalle
+  detecta USD (`priceCurrency` + "Dólares/DLLS"); el índice deja de dropear USD.
+  Nunca se convierte; el tablero segmenta MXN/USD (tarjetas lado a lado, gráficas
+  una sola moneda). Backfill: **20** a USD (`backfill_moneda.py`, evento `moneda`).
+
+Precedencia en `run.py` para altas del índice: **tipo** por `K_Cla3` (código,
+robusto); **transacción / atributos numéricos / moneda / descripción** por el
+DETALLE (pisan al índice); zona/colonia coinciden. **90 pruebas en verde.**
+
+Lo previo (Plan B, sitemaps caídos) SIGUE VIGENTE como fondo:
+
+## Plan B (sitemaps caídos) — vigente
 
 Los **sitemaps XML del sitio siguen caídos** (sirven HTML, HTTP 200, no XML desde
 2026-06-24): `sitemap_bienesraices.xml` (novedades) y `sitemap_grupos_bienesraices.xml`
@@ -41,17 +71,22 @@ captura.
 
 ## Next steps (start here)
 
-Plan B está hecho y validado en `scrape.yml`. Posibles siguientes pasos:
+**Pendiente único conocido:** endurecer `detail_parser` ante un `float("")` vacío
+(1 aviso, 32361904, falló en un backfill con "could not convert string to float:
+''"). Envolver la conversión numérica para tolerar cadenas vacías → None. Muy
+baja urgencia (1 de ~2,150).
 
-- **Re-captura/re-tipado** de la línea base cuando el sitemap vuelva a servir XML
-  (ver Procedures). Hasta entonces el índice por historial mantiene la corrida diaria.
-- **Cobertura de categorías nuevas:** el descubrimiento por historial no ve zonas/tipos
-  que nunca hayan aparecido (el home **no** expone enlaces `/Portada/Indice/` — 0,
-  verificado). Si surge una categoría nueva, entra al historial en cuanto el sitemap
-  vuelva, o se puede sembrar a mano en la bitácora.
-- **NO reintentar Camino B (paginación POST de `/Portada/PostIndice`).** Descartado
-  tras **8 ciclos**: pagina por `firstRegs` (offset) con orden inestable → no enumera.
-  El descubrimiento va por `K_Avisos` (trae TODOS los ids de la categoría en un GET).
+**Verificación pedida al usuario:** tras rebootear la app de Streamlit, revisar si
+las tarjetas MXN + USD lado a lado se ven saturadas; si sí, cambiar al **toggle de
+moneda** (ya documentado como fallback en `app.py`).
+
+**Rentas sin $/m²:** los departamentos en renta casi nunca traen m² de construcción
+en el sitio (se anuncian por renta mensual + recámaras). NO es bug nuestro; se dejó
+como está por decisión del usuario.
+
+Del Plan B (siguen vigentes): re-captura cuando el sitemap vuelva a servir XML;
+cobertura de categorías nuevas via historial; **NO** reintentar Camino B (paginación
+POST, descartado tras 8 ciclos).
 
 ---
 
