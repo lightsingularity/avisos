@@ -113,6 +113,11 @@ listings only**) via `analytics.py`.
 
 ## Gotchas (hard-won — read before changing the scraper)
 
+- **El tablero desplegado (Streamlit Cloud) NO ve datos nuevos hasta REBOOTEAR.** El
+  botón "🔄 Recargar datos" solo limpia el caché y reconstruye desde los archivos EN
+  DISCO; **no hace git pull**. Un commit nuevo a `main` (backfill, scrape) solo llega
+  a la app cuando Streamlit Cloud la reinicia (Manage app → Reboot). Tras cualquier
+  backfill, decirle al usuario que reboootee la app para ver los cambios.
 - **The site 403s anything that isn't a real browser (CloudFront).** Only GitHub
   Actions runners can reach it; this dev container cannot. To run a script against
   the live site: **dispatch an existing workflow** (`calibrate.yml` or
